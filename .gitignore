@@ -51,3 +51,5 @@ MANIFEST
 # SSL Used for running server locally
 cert.pem
 key.pem
+server.log
+start_translation_service_simple.sh
