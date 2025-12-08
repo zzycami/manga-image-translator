@@ -1,0 +1,53 @@
+# 阿里云函数计算配置文件
+# 使用 fun 工具部署时的配置
+
+service:
+  name: manga-translator
+  description: 漫画翻译服务
+  logConfig:
+    project: manga-translator-logs
+    logstore: manga-translator-logstore
+
+provider:
+  name: aliyun
+  region: cn-hangzhou
+  credentials:
+    accessKeyId: ${ALIBABA_CLOUD_ACCESS_KEY_ID}
+    accessKeySecret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET}
+
+functions:
+  translate:
+    name: translate
+    description: 图片翻译函数
+    runtime: custom
+    handler: index.handler
+    codeUri: ./
+    memorySize: 8192  # 8GB内存
+    timeout: 600  # 10分钟超时
+    gpuMemorySize: 16384  # 16GB GPU内存
+    environmentVariables:
+      PYTHONUNBUFFERED: "1"
+      MODEL_DIR: "/mnt/auto/models"  # 如果使用NAS挂载模型
+    customContainerConfig:
+      image: registry.cn-hangzhou.aliyuncs.com/your-namespace/manga-image-translator:fc
+      command: ""
+      args: ""
+    triggers:
+      - name: httpTrigger
+        type: http
+        config:
+          authType: anonymous
+          methods:
+            - GET
+            - POST
+          qualifier: LATEST
+
+# 如果需要使用NAS存储模型文件
+# resources:
+#   nas:
+#     - name: models-nas
+#       description: 模型文件存储
+#       mountTargetDomain: your-nas-domain.cn-hangzhou.nas.aliyuncs.com
+#       mountDir: /mnt/auto/models
+
+

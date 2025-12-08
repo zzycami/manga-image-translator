@@ -1,0 +1,50 @@
+# 阿里云函数计算专用Dockerfile
+# 基于官方PyTorch镜像，支持CUDA
+# 注意：平台在构建时通过 --platform linux/amd64 参数指定（FC 需要 AMD64 架构）
+FROM pytorch/pytorch:2.5.1-cuda11.8-cudnn9-runtime
+
+WORKDIR /app
+
+# 安装系统依赖
+RUN export TZ=Etc/UTC \
+    && apt update --yes \
+    && apt install -y g++ wget ffmpeg libsm6 libxext6 libvulkan1 curl \
+    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && rm -f cuda-keyring_1.1-1_all.deb \
+    && apt update --yes \
+    && apt install -y libcudnn8=8*-1+cuda11.8 libcudnn8-dev=8*-1+cuda11.8 \
+    && apt remove g++ wget --yes \
+    && apt autoremove --yes \
+    && rm -rf /var/cache/apt
+
+# 复制依赖文件
+COPY requirements.txt /app/requirements.txt
+
+# 安装Python依赖
+RUN pip install -r /app/requirements.txt --no-cache-dir
+
+# 安装FC HTTP服务器依赖
+RUN pip install mangum uvicorn gunicorn --no-cache-dir
+
+# 复制项目代码
+COPY . /app
+
+# 准备模型（可选，如果模型文件很大，建议放在OSS上）
+# RUN python -u docker_prepare.py --continue-on-error
+
+# 设置环境变量
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+
+# 创建必要的目录
+RUN mkdir -p /tmp /app/result && chmod 1777 /tmp
+
+# 设置工作目录
+WORKDIR /app
+
+# FC入口点
+# 使用gunicorn运行FastAPI应用
+# FC的Custom Container会自动调用HTTP服务
+CMD ["gunicorn", "fc_server:app", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:9000", "--timeout", "600"]
+

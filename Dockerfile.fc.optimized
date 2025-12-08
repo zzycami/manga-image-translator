@@ -1,0 +1,29 @@
+# 阿里云函数计算专用Dockerfile（基于官方镜像优化版）
+# 基于官方镜像 zyddnys/manga-image-translator:main，已包含所有依赖和模型
+# 注意：平台在构建时通过 --platform linux/amd64 参数指定（FC 需要 AMD64 架构）
+FROM zyddnys/manga-image-translator:main
+
+WORKDIR /app
+
+# 复制 FC 专用的 HTTP 服务器文件（官方镜像不包含此文件）
+COPY fc_server.py /app/fc_server.py
+
+# 安装FC HTTP服务器依赖（官方镜像可能没有这些）
+RUN pip install mangum uvicorn gunicorn --no-cache-dir
+
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1
+
+# 创建必要的目录（官方镜像应该已经有了，但确保存在）
+RUN mkdir -p /tmp /app/result && chmod 1777 /tmp
+
+# 覆盖ENTRYPOINT，使用空ENTRYPOINT，让CMD生效
+# 官方镜像的ENTRYPOINT是 ["python", "-m", "manga_translator"]
+# 我们需要覆盖它，直接运行gunicorn
+ENTRYPOINT []
+
+# FC入口点
+# 使用gunicorn运行FastAPI应用
+# FC的Custom Container会自动调用HTTP服务
+CMD ["gunicorn", "fc_server:app", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:9000", "--timeout", "600"]
+

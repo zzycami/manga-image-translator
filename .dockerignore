@@ -1,11 +1,54 @@
-result
-*.ckpt
-*.pt
-.vscode
-*.onnx
-__pycache__
-ocrs
-models/*
-test/testdata/bboxes
-/venv
+# Git
 .git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+venv
+env
+.venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# 测试和日志
+test
+*.log
+server.log
+result
+*.txt
+!requirements.txt
+!requirements-dev.txt
+
+# 文档
+*.md
+!README.md
+
+# 临时文件
+tmp
+temp
+*.tmp
+
+# 模型文件（如果使用NAS/OSS存储）
+# models
+
+# 前端
+front
+frontend
+
+# 其他
+.DS_Store
+*.bak
