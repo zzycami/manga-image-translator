@@ -58,7 +58,7 @@ async def get_ctx(req: Request, config: Config, image: str|bytes):
 
     return await wait_in_queue(task, None)
 
-async def while_streaming(req: Request, transform, config: Config, image: bytes | str):
+async def while_streaming(req: Request, transform, config: Config, image: bytes | str, meta: dict | None = None):
     image = await to_pil_image(image)
 
     task = QueueElement(req, image, config, 0)
@@ -68,6 +68,14 @@ async def while_streaming(req: Request, transform, config: Config, image: bytes 
 
     def notify_internal(code: int, data: bytes) -> None:
         notify(code, data, transform, messages)
+
+    # Optional metadata frame (status=5). Backward-compatible:
+    # - Existing clients that only handle 0..4 will ignore it.
+    # - New clients can validate correlation (e.g., source image md5 / request id).
+    if meta:
+        import json
+        meta_bytes = json.dumps(meta, ensure_ascii=False).encode("utf-8")
+        messages.put_nowait((5).to_bytes(1, "big") + len(meta_bytes).to_bytes(4, "big") + meta_bytes)
     streaming_response = StreamingResponse(stream(messages), media_type="application/octet-stream")
     asyncio.create_task(wait_in_queue(task, notify_internal))
     return streaming_response

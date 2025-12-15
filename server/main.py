@@ -141,13 +141,16 @@ async def stream_bytes_form(req: Request, image: UploadFile = File(...), config:
     return await while_streaming(req, transform_to_bytes, conf, img)
 
 @app.post("/translate/with-form/image/stream", response_class=StreamingResponse, tags=["api", "form"], response_description="Standard streaming endpoint - returns complete image data. Suitable for API calls and scripts.")
-async def stream_image_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")) -> StreamingResponse:
+async def stream_image_form(req: Request, image: UploadFile = File(...), config: str = Form("{}"), request_id: str | None = Form(None)) -> StreamingResponse:
     """通用流式端点：返回完整图片数据，适用于API调用和comicread脚本"""
     img = await image.read()
     conf = Config.parse_raw(config)
     # 标记为通用模式，不使用占位符优化
     conf._web_frontend_optimized = False
-    return await while_streaming(req, transform_to_image, conf, img)
+    import hashlib
+    src_md5 = hashlib.md5(img).hexdigest()
+    meta = {"request_id": request_id, "source_image_md5": src_md5}
+    return await while_streaming(req, transform_to_image, conf, img, meta=meta)
 
 @app.post("/translate/with-form/image/stream/web", response_class=StreamingResponse, tags=["api", "form"], response_description="Web frontend optimized streaming endpoint - uses placeholder optimization for faster response.")
 async def stream_image_form_web(req: Request, image: UploadFile = File(...), config: str = Form("{}")) -> StreamingResponse:
