@@ -34,20 +34,28 @@ class BatchTranslateRequest(BaseModel):
 async def to_pil_image(image: Union[str, bytes]) -> Image.Image:
     try:
         if isinstance(image, builtins.bytes):
-            image = Image.open(io.BytesIO(image))
-            return image
+            if len(image) == 0:
+                raise ValueError("Image data is empty")
+            image_obj = Image.open(io.BytesIO(image))
+            return image_obj
         else:
             if re.match(r'^data:image/.+;base64,', image):
                 value = image.split(',', 1)[1]
                 image_data = b64decode(value)
-                image = Image.open(io.BytesIO(image_data))
-                return image
+                if len(image_data) == 0:
+                    raise ValueError("Decoded image data is empty")
+                image_obj = Image.open(io.BytesIO(image_data))
+                return image_obj
             else:
                 response = requests.get(image)
-                image = Image.open(io.BytesIO(response.content))
-                return image
+                if len(response.content) == 0:
+                    raise ValueError("Downloaded image data is empty")
+                image_obj = Image.open(io.BytesIO(response.content))
+                return image_obj
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=f"Failed to load image: {str(e)}")
 
 
 async def get_ctx(req: Request, config: Config, image: str|bytes):

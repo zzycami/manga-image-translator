@@ -7,8 +7,12 @@ import subprocess
 import sys
 from argparse import Namespace
 import asyncio
+import json
+import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+logger = logging.getLogger(__name__)
 
 
 from fastapi import FastAPI, Request, HTTPException, Header, UploadFile, File, Form
@@ -155,11 +159,31 @@ async def stream_image_form(req: Request, image: UploadFile = File(...), config:
 @app.post("/translate/with-form/image/stream/web", response_class=StreamingResponse, tags=["api", "form"], response_description="Web frontend optimized streaming endpoint - uses placeholder optimization for faster response.")
 async def stream_image_form_web(req: Request, image: UploadFile = File(...), config: str = Form("{}")) -> StreamingResponse:
     """Web前端专用端点：使用占位符优化，提供极速体验"""
-    img = await image.read()
-    conf = Config.parse_raw(config)
-    # 标记为Web前端优化模式，使用占位符优化
-    conf._web_frontend_optimized = True
-    return await while_streaming(req, transform_to_image, conf, img)
+    try:
+        img = await image.read()
+        if not img:
+            logger.error("Image file is empty")
+            raise HTTPException(status_code=422, detail="Image file is empty")
+        
+        try:
+            # 首先尝试解析JSON以提供更好的错误信息
+            json.loads(config)
+            conf = Config.parse_raw(config)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in config parameter: {str(e)}")
+            raise HTTPException(status_code=422, detail=f"Invalid JSON in config parameter: {str(e)}")
+        except Exception as e:
+            logger.error(f"Invalid config format: {str(e)}, config: {config[:200]}")
+            raise HTTPException(status_code=422, detail=f"Invalid config format: {str(e)}")
+        
+        # 标记为Web前端优化模式，使用占位符优化
+        conf._web_frontend_optimized = True
+        return await while_streaming(req, transform_to_image, conf, img)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in stream_image_form_web: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=422, detail=f"Failed to process request: {str(e)}")
 
 @app.post("/queue-size", response_model=int, tags=["api", "json"])
 async def queue_size() -> int:
