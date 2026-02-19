@@ -31,8 +31,25 @@ app = FastAPI()
 nonce = None
 
 BASE_DIR = Path(__file__).resolve().parent
-RESULT_ROOT = (BASE_DIR.parent / "result").resolve()
+
+# 确定 RESULT_ROOT 路径
+# 优先使用 /app/result（Docker 容器内的标准路径）
+# 如果 BASE_DIR 在 /app 下，说明在容器内，使用 /app/result
+docker_result_path = Path("/app/result")
+relative_result_path = (BASE_DIR.parent / "result").resolve()
+
+# 检测是否在 Docker 容器内（通过检查 BASE_DIR 路径）
+is_in_docker = str(BASE_DIR).startswith("/app")
+
+if is_in_docker:
+    # 在容器内，使用 /app/result
+    RESULT_ROOT = docker_result_path
+else:
+    # 不在容器内，使用相对路径
+    RESULT_ROOT = relative_result_path
+
 RESULT_ROOT.mkdir(parents=True, exist_ok=True)
+logger.info(f"RESULT_ROOT initialized to: {RESULT_ROOT} (exists: {RESULT_ROOT.exists()}, BASE_DIR: {BASE_DIR}, is_in_docker: {is_in_docker})")
 
 app.add_middleware(
     CORSMiddleware,
@@ -353,40 +370,84 @@ async def execute_batch_stream(req: Request, data: BatchTranslateRequest):
 async def list_results():
     """List all result directories"""
     result_dir = RESULT_ROOT
+    
+    # 如果 RESULT_ROOT 不存在，尝试使用 /app/result（Docker 容器路径）
     if not result_dir.exists():
+        docker_path = Path("/app/result")
+        if docker_path.exists() and docker_path != result_dir:
+            logger.warning(f"RESULT_ROOT {result_dir} does not exist, trying Docker path: {docker_path}")
+            result_dir = docker_path
+    
+    logger.info(f"Listing results from: {result_dir} (exists: {result_dir.exists()})")
+    
+    if not result_dir.exists():
+        logger.warning(f"Result directory does not exist: {result_dir}")
         return {"directories": []}
     
     try:
         directories = []
+        total_dirs = 0
         for item_path in result_dir.iterdir():
             if item_path.is_dir():
+                total_dirs += 1
                 # Check if final.png exists in this directory
                 final_png_path = item_path / "final.png"
                 if final_png_path.exists():
                     directories.append(item_path.name)
+                else:
+                    logger.debug(f"Directory {item_path.name} does not contain final.png")
+        
+        logger.info(f"Found {len(directories)} directories with final.png out of {total_dirs} total directories")
         return {"directories": directories}
     except Exception as e:
+        logger.error(f"Error listing results: {e}", exc_info=True)
         raise HTTPException(500, detail=f"Error listing results: {str(e)}")
 
 @app.delete("/results/clear", tags=["api"])
 async def clear_results():
-    """Delete all result directories"""
+    """Delete all result directories (including verbose mode directories without final.png)"""
     result_dir = RESULT_ROOT
+    logger.info(f"Clear results: checking {result_dir} (exists: {result_dir.exists()}, absolute: {result_dir.absolute()})")
+    
     if not result_dir.exists():
-        return {"message": "No results directory found"}
+        # 尝试使用 /app/result（Docker 容器路径）
+        docker_path = Path("/app/result")
+        if docker_path.exists() and docker_path != result_dir:
+            logger.warning(f"RESULT_ROOT {result_dir} does not exist, trying Docker path: {docker_path}")
+            result_dir = docker_path
+    
+    if not result_dir.exists():
+        logger.error(f"Result directory does not exist: {result_dir} (also tried /app/result)")
+        return {"message": f"No results directory found at {result_dir}", "deleted_count": 0}
     
     try:
         deleted_count = 0
+        
+        # Collect all directories first (to avoid modifying directory while iterating)
+        directories_to_delete = []
         for item_path in result_dir.iterdir():
             if item_path.is_dir():
-                # Check if final.png exists in this directory
-                final_png_path = item_path / "final.png"
-                if final_png_path.exists():
-                    shutil.rmtree(item_path)
-                    deleted_count += 1
+                directories_to_delete.append(item_path)
         
-        return {"message": f"Deleted {deleted_count} result directories"}
+        logger.info(f"Found {len(directories_to_delete)} directories to delete")
+        
+        # Delete all subdirectories (including verbose mode directories)
+        for item_path in directories_to_delete:
+            try:
+                shutil.rmtree(item_path)
+                deleted_count += 1
+                logger.debug(f"Deleted result directory: {item_path.name}")
+            except Exception as e:
+                logger.warning(f"Failed to delete directory {item_path.name}: {e}")
+        
+        message = f"Deleted {deleted_count} result directories"
+        logger.info(message)
+        return {
+            "message": message,
+            "deleted_count": deleted_count
+        }
     except Exception as e:
+        logger.error(f"Error clearing results: {e}", exc_info=True)
         raise HTTPException(500, detail=f"Error clearing results: {str(e)}")
 
 @app.delete("/results/{folder_name}", tags=["api"])
