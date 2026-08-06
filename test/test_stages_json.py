@@ -22,6 +22,8 @@ def test_to_translation_stages_basic():
         direction="h",
     )
     ctx.text_regions = [blk]
+    ctx.mask = np.zeros((200, 100), dtype=np.uint8)
+    ctx.mask[20:40, 10:50] = 255
 
     stages = to_translation_stages(ctx, include_inpainted=False)
     assert stages.schemaVersion == SCHEMA_VERSION
@@ -41,6 +43,11 @@ def test_to_translation_stages_basic():
     dumped = stages.model_dump()
     assert dumped["pipelineMode"] == "json_stages"
     assert dumped.get("inpaintedJpegBase64") in (None, "")
+    assert stages.maskPngBase64
+    assert len(stages.maskPngBase64) > 20
+
+    stages_no_mask = to_translation_stages(ctx, include_mask=False, include_inpainted=False)
+    assert stages_no_mask.maskPngBase64 in (None, "")
 
     ctx.img_inpainted = np.ones((200, 100, 3), dtype=np.uint8) * 200
     stages2 = to_translation_stages(ctx, include_inpainted=True)

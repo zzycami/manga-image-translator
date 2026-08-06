@@ -7,27 +7,28 @@
 
 在保留现有 `full`（整图上传 → 全流水 → 回译图）的前提下，逐步支持：
 
-1. `json_stages`（产品主路径）：上传原图 → OCR → 翻译 → 下发紧凑 stages JSON（**默认不含擦净底图**）→ 客户端用原图 + polygons 擦净并叠字。
+1. `json_stages`（产品主路径）：上传原图 → 检测/OCR → 翻译 → **mask 精炼** → 下发紧凑 stages（**含 `maskPngBase64`，默认不含擦净底图**）→ 客户端用原图 + mask 做 lama 擦净（几何擦净为 fallback）→ 叠字。
 2. `translate_only`：客户端已提供 OCR 文本时，云端只做翻译。
 
 权威中间格式见 companion：`docs/SCHEMA.md`（schemaVersion `0.1.0`）。
 
-## 本分支已落地（Phase 1）
+## 本分支已落地
 
 - [x] `Config.pipeline_mode`：`full` | `json_stages` | `translate_only`（后者预留）
-- [x] `json_stages`：跳过服务端文字渲染，写入 `ctx.translation_stages`
-- [x] `manga_translator/stages_json.py`：SCHEMA 0.1.0 序列化
-- [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
+- [x] `json_stages`：跳过服务端文字渲染与 **inpaint**，写入 `ctx.translation_stages`
+- [x] `json_stages`：**保留 mask 精炼**；默认 `stages_include_mask=true` 附带 `maskPngBase64`
 - [x] 默认不附带 `inpaintedJpegBase64`；`stages_include_inpainted=true` 可 opt-in
-- [x] `json_stages` 默认跳过 mask 精炼与服务端 inpaint（客户端擦净）
 - [x] `fontSize` / `alignment` 写入 stages
+- [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
+- [x] Mac 摸底：`tools/client_pipeline/bench_client_lama.py`（同款 `lama_large` + 原图 + mask）
+- [x] E2E：`tools/client_pipeline/run_e2e_client_pipeline.py`（mask→lama→native 叠字）
 - [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
-- [ ] 导出端侧模型（后续 Phase 2）
+- [ ] Native/ONNX/Android 接入 lama（视摸底结论）
 
-配套：`../manga-translate-native`（`mt_render_rgba` ≥0.3.4：原图 polygon 擦净 + CoreText 叠字）
+配套：`../manga-translate-native`（几何擦净 `mt_render` ≥0.3.8 作 fallback；lama 端上推理待摸底后接线）
 
-## 本分支计划改动（后续）
+## 后续
 
 - [ ] `translate_only` 完整接线
-- [ ] 与 Hub 契约对齐（TinyReader 不直连本服务裸端口；**产品侧需双输出兼容旧 full**）
-- [ ] 端上更强擦净（mask / 简易 inpaint）若 polygon 盖底不够
+- [ ] 与 Hub 契约对齐（**双输出兼容旧 full**）
+- [ ] 若 Mac/真机 lama 过重：蒸馏/量化后再进 App

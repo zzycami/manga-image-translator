@@ -1,0 +1,26 @@
+{
+  "title": "端上同款擦净摸底（mask 下发 + lama_large）",
+  "createdAt": "2026-08-07T05:49:00+08:00",
+  "subtasks": [
+    {
+      "id": "mit-mask-stages",
+      "description": "json_stages 恢复 mask、跳过 inpaint",
+      "status": "done"
+    },
+    {
+      "id": "docs-schema-mask",
+      "description": "更新 SCHEMA / CLIENT_STAGE_PIPELINE",
+      "status": "done"
+    },
+    {
+      "id": "mac-lama-bench",
+      "description": "Mac lama_large 摸底华茵三页",
+      "status": "done"
+    },
+    {
+      "id": "decide-next",
+      "description": "根据 bench 写结论",
+      "status": "done"
+    }
+  ]
+}

@@ -333,6 +333,8 @@ class Config(BaseModel):
     """Stage split for client-side rendering (manga-translate-native). Default full keeps legacy behavior."""
     stages_include_inpainted: bool = False
     """When pipeline_mode=json_stages, attach inpaintedJpegBase64 (large). Default off: client erases locally."""
+    stages_include_mask: bool = True
+    """When pipeline_mode=json_stages, attach refined maskPngBase64 (small). Client needs it for lama/erase."""
     render: RenderConfig = RenderConfig()
     """render configs"""
     upscale: UpscaleConfig = UpscaleConfig()

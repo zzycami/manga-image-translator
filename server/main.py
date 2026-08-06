@@ -110,6 +110,7 @@ async def stages(req: Request, data: TranslateRequest):
         return ctx.translation_stages
     return to_translation_stages(
         ctx,
+        include_mask=bool(getattr(data.config, "stages_include_mask", True)),
         include_inpainted=bool(getattr(data.config, "stages_include_inpainted", False)),
     )
 
@@ -161,6 +162,7 @@ async def stages_form(req: Request, image: UploadFile = File(...), config: str =
         return ctx.translation_stages
     return to_translation_stages(
         ctx,
+        include_mask=bool(getattr(conf, "stages_include_mask", True)),
         include_inpainted=bool(getattr(conf, "stages_include_inpainted", False)),
     )
 

@@ -1,0 +1,5 @@
+2026-08-07T05:49:00+08:00 started mask+lama_large client erase bench plan
+2026-08-07T05:51:00+08:00 mit-mask-stages done stages_include_mask default true; skip inpaint
+2026-08-07T05:52:00+08:00 docs-schema-mask done
+2026-08-07T05:53:30+08:00 mac-lama-bench done MPS ~419ms/page ~968MB RSS; see result/bench_lama_client/
+2026-08-07T05:54:00+08:00 decide-next done promising on Mac MPS; phone needs port+likely quantize; geometry fallback stays
