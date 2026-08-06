@@ -22,6 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from manga_translator import Config
+from manga_translator.config import PipelineMode
+from manga_translator.stages_json import TranslationStages, to_translation_stages
 from server.instance import ExecutorInstance, executor_instances
 from server.myqueue import task_queue
 from server.request_extraction import get_ctx, while_streaming, TranslateRequest, BatchTranslateRequest, get_batch_ctx
@@ -94,6 +96,20 @@ async def json(req: Request, data: TranslateRequest):
     ctx = await get_ctx(req, data.config, data.image)
     return to_translation(ctx)
 
+@app.post(
+    "/translate/stages",
+    response_model=TranslationStages,
+    tags=["api", "json"],
+    response_description="Compact TranslationStages JSON for client-side render (pipeline_mode=json_stages)",
+)
+async def stages(req: Request, data: TranslateRequest):
+    """Run pipeline with json_stages (skip server text render) and return SCHEMA 0.1.0 JSON."""
+    data.config.pipeline_mode = PipelineMode.json_stages
+    ctx = await get_ctx(req, data.config, data.image)
+    if getattr(ctx, "translation_stages", None) is not None:
+        return ctx.translation_stages
+    return to_translation_stages(ctx)
+
 @app.post("/translate/bytes", response_class=StreamingResponse, tags=["api", "json"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
 async def bytes(req: Request, data: TranslateRequest):
     ctx = await get_ctx(req, data.config, data.image)
@@ -126,6 +142,21 @@ async def json_form(req: Request, image: UploadFile = File(...), config: str = F
     conf = Config.parse_raw(config)
     ctx = await get_ctx(req, conf, img)
     return to_translation(ctx)
+
+@app.post(
+    "/translate/with-form/stages",
+    response_model=TranslationStages,
+    tags=["api", "form"],
+    response_description="Compact TranslationStages JSON for client-side render",
+)
+async def stages_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")):
+    img = await image.read()
+    conf = Config.parse_raw(config)
+    conf.pipeline_mode = PipelineMode.json_stages
+    ctx = await get_ctx(req, conf, img)
+    if getattr(ctx, "translation_stages", None) is not None:
+        return ctx.translation_stages
+    return to_translation_stages(ctx)
 
 @app.post("/translate/with-form/bytes", response_class=StreamingResponse, tags=["api", "form"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
 async def bytes_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")):

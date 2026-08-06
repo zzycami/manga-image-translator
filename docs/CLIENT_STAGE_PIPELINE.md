@@ -12,19 +12,19 @@
 
 权威中间格式见 companion：`docs/SCHEMA.md`（schemaVersion `0.1.0`）。
 
-## 本分支计划改动（MIT）
+## 本分支已落地（Phase 1）
 
-- [ ] API / config 增加 `pipelineMode`（或等价字段）
-- [ ] `json_stages` 响应：序列化 regions（框、源文、译文、颜色、方向）
-- [ ] 可选：跳过 raster render 以省 GPU/带宽
-- [ ] 导出端侧模型说明（ONNX/MNN）与版本标签，供 native Release 使用
-- [ ] 与 Hub comic-translate 契约对齐（TinyReader 不直连本服务裸端口）
+- [x] `Config.pipeline_mode`：`full` | `json_stages` | `translate_only`（后者预留）
+- [x] `json_stages`：跳过服务端文字渲染，写入 `ctx.translation_stages`
+- [x] `manga_translator/stages_json.py`：SCHEMA 0.1.0 序列化
+- [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
+- [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
+- [ ] 导出端侧模型（后续 Phase 2）
 
-## 非目标（本分支早期）
+配套：`../manga-translate-native`（`mt_render_rgba` Phase 1 先画框底，字形后续 FreeType）
 
-- 不删除 `full` 模式
-- 不把 C++/JNI 实现放进本 Python 仓
+## 本分支计划改动（后续）
 
-## 本地 WIP 说明
-
-创建本分支前，若 `main` 上有未提交改动，已 `git stash`（信息含 `wip before feat/client-stage-pipeline`）。需要时在 `main` 上 `git stash pop`。
+- [ ] `translate_only` 完整接线
+- [ ] 可选 `maskPngBase64` 下发
+- [ ] 与 Hub 契约对齐（TinyReader 不直连本服务裸端口）

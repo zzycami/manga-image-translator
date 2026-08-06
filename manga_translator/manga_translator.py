@@ -608,13 +608,23 @@ class MangaTranslator:
             # 发送特殊格式的消息，前端可以解析
             await self._report_progress(f'rendering_folder:{folder_name}')
 
-        try:
-            ctx.img_rendered = await self._run_text_rendering(config, ctx)
-        except Exception as e:
-            logger.error(f"Error during rendering:\n{traceback.format_exc()}")
-            if not self.ignore_errors:
-                raise
-            ctx.img_rendered = ctx.img_inpainted # Fallback to inpainted (or original RGB) image if rendering fails
+        if getattr(config, 'skip_server_text_render', False):
+            # json_stages: client composites text; keep inpainted raster as result placeholder
+            ctx.img_rendered = ctx.img_inpainted
+            try:
+                from manga_translator.stages_json import to_translation_stages
+                ctx.translation_stages = to_translation_stages(ctx)
+            except Exception:
+                logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
+                ctx.translation_stages = None
+        else:
+            try:
+                ctx.img_rendered = await self._run_text_rendering(config, ctx)
+            except Exception as e:
+                logger.error(f"Error during rendering:\n{traceback.format_exc()}")
+                if not self.ignore_errors:
+                    raise
+                ctx.img_rendered = ctx.img_inpainted # Fallback to inpainted (or original RGB) image if rendering fails
 
         await self._report_progress('finished', True)
         ctx.result = dump_image(ctx.input, ctx.img_rendered, ctx.img_alpha)
@@ -2556,13 +2566,22 @@ class MangaTranslator:
             # 发送特殊格式的消息，前端可以解析
             await self._report_progress(f'rendering_folder:{folder_name}')
 
-        try:
-            ctx.img_rendered = await self._run_text_rendering(config, ctx)
-        except Exception as e:
-            logger.error(f"Error during rendering:\n{traceback.format_exc()}")
-            if not self.ignore_errors:
-                raise
+        if getattr(config, 'skip_server_text_render', False):
             ctx.img_rendered = ctx.img_inpainted
+            try:
+                from manga_translator.stages_json import to_translation_stages
+                ctx.translation_stages = to_translation_stages(ctx)
+            except Exception:
+                logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
+                ctx.translation_stages = None
+        else:
+            try:
+                ctx.img_rendered = await self._run_text_rendering(config, ctx)
+            except Exception as e:
+                logger.error(f"Error during rendering:\n{traceback.format_exc()}")
+                if not self.ignore_errors:
+                    raise
+                ctx.img_rendered = ctx.img_inpainted
 
         await self._report_progress('finished', True)
         ctx.result = dump_image(ctx.input, ctx.img_rendered, ctx.img_alpha)

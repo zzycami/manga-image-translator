@@ -62,6 +62,15 @@ class Renderer(str, Enum):
     manga2EngPillow = "manga2eng_pillow"
     none = "none"
 
+class PipelineMode(str, Enum):
+    """Cloud vs client stage split (see docs/CLIENT_STAGE_PIPELINE.md)."""
+    full = "full"
+    """detect→ocr→translate→inpaint→render; return raster (default)."""
+    json_stages = "json_stages"
+    """Same through inpaint, skip server text render; attach TranslationStages JSON for client render."""
+    translate_only = "translate_only"
+    """Reserved: client already supplied OCR texts; cloud translates only (not fully wired yet)."""
+
 class Alignment(str, Enum):
     auto = "auto"
     left = "left"
@@ -320,6 +329,8 @@ class Config(BaseModel):
     # General
     filter_text: Optional[str] = None
     """Filter regions by their text with a regex. Example usage: '.*badtext.*'"""
+    pipeline_mode: PipelineMode = PipelineMode.full
+    """Stage split for client-side rendering (manga-translate-native). Default full keeps legacy behavior."""
     render: RenderConfig = RenderConfig()
     """render configs"""
     upscale: UpscaleConfig = UpscaleConfig()
@@ -342,6 +353,10 @@ class Config(BaseModel):
     mask_dilation_offset: int = 20
     """By how much to extend the text mask to remove left-over text pixels of the original image."""
     _filter_text = None
+
+    @property
+    def skip_server_text_render(self) -> bool:
+        return self.pipeline_mode == PipelineMode.json_stages
 
     @property
     def re_filter_text(self):
