@@ -22,6 +22,8 @@
 - [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
 - [x] Mac 摸底：`tools/client_pipeline/bench_client_lama.py`（同款 `lama_large` + 原图 + mask）
 - [x] E2E：`tools/client_pipeline/run_e2e_client_pipeline.py`（mask→lama→native 叠字）
+- [x] ONNX 导出：`tools/client_pipeline/export_lama_onnx.py`（matmul DFT；`result/lama_onnx/lama_large_512.onnx` ≈206MB；ORT 与 PyTorch 对齐）
+- [ ] Android ORT 真机计时 / 量化（TinyReader `lama.onnx.path` 冒烟路径）
 - [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
 - [ ] Native/ONNX/Android 接入 lama（视摸底结论）
 
