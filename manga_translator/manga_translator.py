@@ -560,45 +560,61 @@ class MangaTranslator:
             ctx.result = ctx.upscaled
             return await self._revert_upscale(config, ctx)
 
-        # -- Mask refinement
-        # (Delayed to take advantage of the region filtering done after ocr and translation)
-        if ctx.mask is None:
-            await self._report_progress('mask-generation')
+        # -- Mask refinement + inpainting
+        # json_stages (default): client erases on-device from original + polygons; skip heavy GPU steps.
+        # Opt-in stages_include_inpainted keeps server inpaint and embeds JPEG in stages JSON.
+        skip_client_erase = getattr(config, 'skip_server_text_render', False) and not getattr(
+            config, 'stages_include_inpainted', False
+        )
+        if skip_client_erase:
+            await self._report_progress('inpainting')
+            ctx.img_inpainted = ctx.img_rgb
+            if ctx.mask is None:
+                ctx.mask = (
+                    ctx.mask_raw
+                    if ctx.mask_raw is not None
+                    else np.zeros_like(ctx.img_rgb, dtype=np.uint8)[:, :, 0]
+                )
+            ctx.gimp_mask = np.dstack((cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR), ctx.mask))
+        else:
+            # (Delayed to take advantage of the region filtering done after ocr and translation)
+            if ctx.mask is None:
+                await self._report_progress('mask-generation')
+                try:
+                    ctx.mask = await self._run_mask_refinement(config, ctx)
+                except Exception as e:
+                    logger.error(f"Error during mask-generation:\n{traceback.format_exc()}")
+                    if not self.ignore_errors:
+                        raise
+                    ctx.mask = ctx.mask_raw if ctx.mask_raw is not None else np.zeros_like(ctx.img_rgb, dtype=np.uint8)[:,:,0] # Fallback to raw mask or empty mask
+
+            if self.verbose and ctx.mask is not None:
+                inpaint_input_img = await dispatch_inpainting(Inpainter.none, ctx.img_rgb, ctx.mask, config.inpainter,config.inpainter.inpainting_size,
+                                                              self.device, self.verbose)
+                cv2.imwrite(self._result_path('inpaint_input.png'), cv2.cvtColor(inpaint_input_img, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(self._result_path('mask_final.png'), ctx.mask)
+
+            # -- Inpainting
+            await self._report_progress('inpainting')
             try:
-                ctx.mask = await self._run_mask_refinement(config, ctx)
-            except Exception as e:  
-                logger.error(f"Error during mask-generation:\n{traceback.format_exc()}")  
-                if not self.ignore_errors:  
-                    raise 
-                ctx.mask = ctx.mask_raw if ctx.mask_raw is not None else np.zeros_like(ctx.img_rgb, dtype=np.uint8)[:,:,0] # Fallback to raw mask or empty mask
-
-        if self.verbose and ctx.mask is not None:
-            inpaint_input_img = await dispatch_inpainting(Inpainter.none, ctx.img_rgb, ctx.mask, config.inpainter,config.inpainter.inpainting_size,
-                                                          self.device, self.verbose)
-            cv2.imwrite(self._result_path('inpaint_input.png'), cv2.cvtColor(inpaint_input_img, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(self._result_path('mask_final.png'), ctx.mask)
-
-        # -- Inpainting
-        await self._report_progress('inpainting')
-        try:
-            ctx.img_inpainted = await self._run_inpainting(config, ctx)
-        except Exception as e:  
-            logger.error(f"Error during inpainting:\n{traceback.format_exc()}")  
-            if not self.ignore_errors:  
-                raise
-            else:
-                ctx.img_inpainted = ctx.img_rgb
-        ctx.gimp_mask = np.dstack((cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR), ctx.mask))
-
-        if self.verbose:
-            try:
-                inpainted_path = self._result_path('inpainted.png')
-                success = cv2.imwrite(inpainted_path, cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR))
-                if not success:
-                    logger.warning(f"Failed to save debug image: {inpainted_path}")
+                ctx.img_inpainted = await self._run_inpainting(config, ctx)
             except Exception as e:
-                logger.error(f"Error saving inpainted.png debug image: {e}")
-                logger.debug(f"Exception details: {traceback.format_exc()}")
+                logger.error(f"Error during inpainting:\n{traceback.format_exc()}")
+                if not self.ignore_errors:
+                    raise
+                else:
+                    ctx.img_inpainted = ctx.img_rgb
+            ctx.gimp_mask = np.dstack((cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR), ctx.mask))
+
+            if self.verbose:
+                try:
+                    inpainted_path = self._result_path('inpainted.png')
+                    success = cv2.imwrite(inpainted_path, cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR))
+                    if not success:
+                        logger.warning(f"Failed to save debug image: {inpainted_path}")
+                except Exception as e:
+                    logger.error(f"Error saving inpainted.png debug image: {e}")
+                    logger.debug(f"Exception details: {traceback.format_exc()}")
         # -- Rendering
         await self._report_progress('rendering')
 
@@ -609,11 +625,14 @@ class MangaTranslator:
             await self._report_progress(f'rendering_folder:{folder_name}')
 
         if getattr(config, 'skip_server_text_render', False):
-            # json_stages: client composites text; keep inpainted raster as result placeholder
+            # json_stages: client composites text on original (or optional inpainted base)
             ctx.img_rendered = ctx.img_inpainted
             try:
                 from manga_translator.stages_json import to_translation_stages
-                ctx.translation_stages = to_translation_stages(ctx, include_inpainted=True)
+                ctx.translation_stages = to_translation_stages(
+                    ctx,
+                    include_inpainted=bool(getattr(config, 'stages_include_inpainted', False)),
+                )
             except Exception:
                 logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
                 ctx.translation_stages = None
@@ -2503,59 +2522,70 @@ class MangaTranslator:
             ctx.result = ctx.upscaled
             return await self._revert_upscale(config, ctx)
 
-        # -- Mask refinement
-        if ctx.mask is None:
-            await self._report_progress('mask-generation')
-            try:
-                ctx.mask = await self._run_mask_refinement(config, ctx)
-            except Exception as e:  
-                logger.error(f"Error during mask-generation:\n{traceback.format_exc()}")  
-                if not self.ignore_errors:  
-                    raise 
-                ctx.mask = ctx.mask_raw if ctx.mask_raw is not None else np.zeros_like(ctx.img_rgb, dtype=np.uint8)[:,:,0]
+        # -- Mask refinement + inpainting (skip for default json_stages client erase)
+        skip_client_erase = getattr(config, 'skip_server_text_render', False) and not getattr(
+            config, 'stages_include_inpainted', False
+        )
+        if skip_client_erase:
+            await self._report_progress('inpainting')
+            ctx.img_inpainted = ctx.img_rgb
+            if ctx.mask is None:
+                ctx.mask = (
+                    ctx.mask_raw
+                    if ctx.mask_raw is not None
+                    else np.zeros_like(ctx.img_rgb, dtype=np.uint8)[:, :, 0]
+                )
+            ctx.gimp_mask = np.dstack((cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR), ctx.mask))
+        else:
+            if ctx.mask is None:
+                await self._report_progress('mask-generation')
+                try:
+                    ctx.mask = await self._run_mask_refinement(config, ctx)
+                except Exception as e:
+                    logger.error(f"Error during mask-generation:\n{traceback.format_exc()}")
+                    if not self.ignore_errors:
+                        raise
+                    ctx.mask = ctx.mask_raw if ctx.mask_raw is not None else np.zeros_like(ctx.img_rgb, dtype=np.uint8)[:,:,0]
 
-        if self.verbose and ctx.mask is not None:
+            if self.verbose and ctx.mask is not None:
+                try:
+                    inpaint_input_img = await dispatch_inpainting(Inpainter.none, ctx.img_rgb, ctx.mask, config.inpainter,config.inpainter.inpainting_size,
+                                                                  self.device, self.verbose)
+
+                    inpaint_input_path = self._result_path('inpaint_input.png')
+                    success1 = cv2.imwrite(inpaint_input_path, cv2.cvtColor(inpaint_input_img, cv2.COLOR_RGB2BGR))
+                    if not success1:
+                        logger.warning(f"Failed to save debug image: {inpaint_input_path}")
+
+                    mask_final_path = self._result_path('mask_final.png')
+                    success2 = cv2.imwrite(mask_final_path, ctx.mask)
+                    if not success2:
+                        logger.warning(f"Failed to save debug image: {mask_final_path}")
+                except Exception as e:
+                    logger.error(f"Error saving debug images (inpaint_input.png, mask_final.png): {e}")
+                    logger.debug(f"Exception details: {traceback.format_exc()}")
+
+            await self._report_progress('inpainting')
             try:
-                inpaint_input_img = await dispatch_inpainting(Inpainter.none, ctx.img_rgb, ctx.mask, config.inpainter,config.inpainter.inpainting_size,
-                                                              self.device, self.verbose)
-                
-                # 保存inpaint_input.png
-                inpaint_input_path = self._result_path('inpaint_input.png')
-                success1 = cv2.imwrite(inpaint_input_path, cv2.cvtColor(inpaint_input_img, cv2.COLOR_RGB2BGR))
-                if not success1:
-                    logger.warning(f"Failed to save debug image: {inpaint_input_path}")
-                
-                # 保存mask_final.png
-                mask_final_path = self._result_path('mask_final.png')
-                success2 = cv2.imwrite(mask_final_path, ctx.mask)
-                if not success2:
-                    logger.warning(f"Failed to save debug image: {mask_final_path}")
+                ctx.img_inpainted = await self._run_inpainting(config, ctx)
+
             except Exception as e:
-                logger.error(f"Error saving debug images (inpaint_input.png, mask_final.png): {e}")
-                logger.debug(f"Exception details: {traceback.format_exc()}")
+                logger.error(f"Error during inpainting:\n{traceback.format_exc()}")
+                if not self.ignore_errors:
+                    raise
+                else:
+                    ctx.img_inpainted = ctx.img_rgb
+            ctx.gimp_mask = np.dstack((cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR), ctx.mask))
 
-        # -- Inpainting
-        await self._report_progress('inpainting')
-        try:
-            ctx.img_inpainted = await self._run_inpainting(config, ctx)
-
-        except Exception as e:  
-            logger.error(f"Error during inpainting:\n{traceback.format_exc()}")  
-            if not self.ignore_errors:  
-                raise
-            else:
-                ctx.img_inpainted = ctx.img_rgb
-        ctx.gimp_mask = np.dstack((cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR), ctx.mask))
-
-        if self.verbose:
-            try:
-                inpainted_path = self._result_path('inpainted.png')
-                success = cv2.imwrite(inpainted_path, cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR))
-                if not success:
-                    logger.warning(f"Failed to save debug image: {inpainted_path}")
-            except Exception as e:
-                logger.error(f"Error saving inpainted.png debug image: {e}")
-                logger.debug(f"Exception details: {traceback.format_exc()}")
+            if self.verbose:
+                try:
+                    inpainted_path = self._result_path('inpainted.png')
+                    success = cv2.imwrite(inpainted_path, cv2.cvtColor(ctx.img_inpainted, cv2.COLOR_RGB2BGR))
+                    if not success:
+                        logger.warning(f"Failed to save debug image: {inpainted_path}")
+                except Exception as e:
+                    logger.error(f"Error saving inpainted.png debug image: {e}")
+                    logger.debug(f"Exception details: {traceback.format_exc()}")
 
         # -- Rendering
         await self._report_progress('rendering')
@@ -2570,7 +2600,10 @@ class MangaTranslator:
             ctx.img_rendered = ctx.img_inpainted
             try:
                 from manga_translator.stages_json import to_translation_stages
-                ctx.translation_stages = to_translation_stages(ctx, include_inpainted=True)
+                ctx.translation_stages = to_translation_stages(
+                    ctx,
+                    include_inpainted=bool(getattr(config, 'stages_include_inpainted', False)),
+                )
             except Exception:
                 logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
                 ctx.translation_stages = None

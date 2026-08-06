@@ -1,0 +1,31 @@
+{
+  "title": "端上擦净：stages 不下载擦净底图，原图+区域本地擦净再叠字",
+  "createdAt": "2026-08-07T05:08:00+08:00",
+  "decisions": {
+    "transport": "上传原图一次 + 下发紧凑 stages JSON；不下发 inpaintedJpegBase64",
+    "erase": "客户端用 regions.polygons + bgColor 不透明覆盖擦净，再叠字；inpainted 仍作可选兼容",
+    "server": "json_stages 跳过 mask 精炼与 inpaint，加速云端"
+  },
+  "subtasks": [
+    {
+      "id": "native-polygon-erase",
+      "description": "mt_render：无 inpaint 时用 polygon/bg 本地擦净；有 inpaint 仍兼容",
+      "status": "done"
+    },
+    {
+      "id": "mit-slim-stages",
+      "description": "MIT：json_stages 默认不附带擦净图，并跳过服务端 inpaint",
+      "status": "done"
+    },
+    {
+      "id": "docs-schema",
+      "description": "更新 SCHEMA / CLIENT_STAGE_PIPELINE 说明目标链路",
+      "status": "done"
+    },
+    {
+      "id": "verify-hana-local",
+      "description": "用华茵三页：strip inpaint 后原图渲染，对比体积与预览",
+      "status": "done"
+    }
+  ]
+}

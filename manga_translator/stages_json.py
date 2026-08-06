@@ -103,10 +103,14 @@ class TranslationStages(BaseModel):
 def to_translation_stages(
     ctx: Context,
     include_mask: bool = False,
-    include_inpainted: bool = True,
+    include_inpainted: bool = False,
     inpainted_jpeg_quality: int = 85,
 ) -> TranslationStages:
-    """Build stages JSON; by default attaches JPEG inpainted base for clean client render."""
+    """Build stages JSON for client render.
+
+    Default is layout-only (no inpainted JPEG): client keeps the original page and
+    erases via polygons + bgColor. Pass include_inpainted=True for legacy / opt-in.
+    """
     text_regions: List[TextBlock] = list(getattr(ctx, "text_regions", None) or [])
     h, w = 0, 0
     if getattr(ctx, "img_rgb", None) is not None:
@@ -185,7 +189,7 @@ def to_translation_stages(
 def stages_dict(
     ctx: Context,
     include_mask: bool = False,
-    include_inpainted: bool = True,
+    include_inpainted: bool = False,
 ) -> Dict[str, Any]:
     return to_translation_stages(
         ctx, include_mask=include_mask, include_inpainted=include_inpainted

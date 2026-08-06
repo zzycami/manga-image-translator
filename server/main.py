@@ -108,7 +108,10 @@ async def stages(req: Request, data: TranslateRequest):
     ctx = await get_ctx(req, data.config, data.image)
     if getattr(ctx, "translation_stages", None) is not None:
         return ctx.translation_stages
-    return to_translation_stages(ctx, include_inpainted=True)
+    return to_translation_stages(
+        ctx,
+        include_inpainted=bool(getattr(data.config, "stages_include_inpainted", False)),
+    )
 
 @app.post("/translate/bytes", response_class=StreamingResponse, tags=["api", "json"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
 async def bytes(req: Request, data: TranslateRequest):
@@ -156,7 +159,10 @@ async def stages_form(req: Request, image: UploadFile = File(...), config: str =
     ctx = await get_ctx(req, conf, img)
     if getattr(ctx, "translation_stages", None) is not None:
         return ctx.translation_stages
-    return to_translation_stages(ctx, include_inpainted=True)
+    return to_translation_stages(
+        ctx,
+        include_inpainted=bool(getattr(conf, "stages_include_inpainted", False)),
+    )
 
 @app.post("/translate/with-form/bytes", response_class=StreamingResponse, tags=["api", "form"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
 async def bytes_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")):

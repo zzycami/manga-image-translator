@@ -1,0 +1,6 @@
+2026-08-07T05:08:00+08:00 started 端上擦净 / stages 不带擦净底图
+2026-08-07T05:08:30+08:00 native-polygon-erase note 开始改 mt_render polygon 覆盖
+2026-08-07T05:11:00+08:00 native-polygon-erase done mt_render 0.3.4 polygon opaque erase
+2026-08-07T05:11:10+08:00 mit-slim-stages done default no inpainted; skip server inpaint for json_stages
+2026-08-07T05:11:20+08:00 docs-schema done SCHEMA + CLIENT_STAGE_PIPELINE
+2026-08-07T05:11:30+08:00 verify-hana-local done slim ~2-4KB; previews in result/batch_hana_client_erase/; commit skipped (user rule)

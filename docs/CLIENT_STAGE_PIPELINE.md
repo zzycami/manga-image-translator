@@ -7,7 +7,7 @@
 
 在保留现有 `full`（整图上传 → 全流水 → 回译图）的前提下，逐步支持：
 
-1. `json_stages`：服务端跑到翻译（及可选 mask），返回与 native 一致的 JSON；客户端 `mt_render_rgba` 叠字。
+1. `json_stages`（产品主路径）：上传原图 → OCR → 翻译 → 下发紧凑 stages JSON（**默认不含擦净底图**）→ 客户端用原图 + polygons 擦净并叠字。
 2. `translate_only`：客户端已提供 OCR 文本时，云端只做翻译。
 
 权威中间格式见 companion：`docs/SCHEMA.md`（schemaVersion `0.1.0`）。
@@ -18,14 +18,16 @@
 - [x] `json_stages`：跳过服务端文字渲染，写入 `ctx.translation_stages`
 - [x] `manga_translator/stages_json.py`：SCHEMA 0.1.0 序列化
 - [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
+- [x] 默认不附带 `inpaintedJpegBase64`；`stages_include_inpainted=true` 可 opt-in
+- [x] `json_stages` 默认跳过 mask 精炼与服务端 inpaint（客户端擦净）
+- [x] `fontSize` / `alignment` 写入 stages
 - [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
 - [ ] 导出端侧模型（后续 Phase 2）
 
-配套：`../manga-translate-native`（`mt_render_rgba` Phase 1 先画框底，字形后续 FreeType）
+配套：`../manga-translate-native`（`mt_render_rgba` ≥0.3.4：原图 polygon 擦净 + CoreText 叠字）
 
 ## 本分支计划改动（后续）
 
 - [ ] `translate_only` 完整接线
-- [x] 可选 `inpaintedJpegBase64` / `skipRegionFill`（擦净底供客户端叠字）
-- [x] `fontSize` / `alignment` 写入 stages
 - [ ] 与 Hub 契约对齐（TinyReader 不直连本服务裸端口；**产品侧需双输出兼容旧 full**）
+- [ ] 端上更强擦净（mask / 简易 inpaint）若 polygon 盖底不够
