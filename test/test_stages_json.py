@@ -23,7 +23,7 @@ def test_to_translation_stages_basic():
     )
     ctx.text_regions = [blk]
 
-    stages = to_translation_stages(ctx)
+    stages = to_translation_stages(ctx, include_inpainted=False)
     assert stages.schemaVersion == SCHEMA_VERSION
     assert stages.imageWidth == 100
     assert stages.imageHeight == 200
@@ -37,8 +37,17 @@ def test_to_translation_stages_basic():
     assert r.boundingBox.w == 40
     assert r.boundingBox.h == 20
     assert r.fgColor.startswith("#")
+    assert r.fontSize > 0
     dumped = stages.model_dump()
     assert dumped["pipelineMode"] == "json_stages"
+    assert dumped.get("inpaintedJpegBase64") in (None, "")
+
+    ctx.img_inpainted = np.ones((200, 100, 3), dtype=np.uint8) * 200
+    stages2 = to_translation_stages(ctx, include_inpainted=True)
+    assert stages2.skipRegionFill is True
+    assert stages2.inpaintedJpegBase64
+    assert len(stages2.inpaintedJpegBase64) > 100
+
 
 
 if __name__ == "__main__":

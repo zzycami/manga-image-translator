@@ -613,7 +613,7 @@ class MangaTranslator:
             ctx.img_rendered = ctx.img_inpainted
             try:
                 from manga_translator.stages_json import to_translation_stages
-                ctx.translation_stages = to_translation_stages(ctx)
+                ctx.translation_stages = to_translation_stages(ctx, include_inpainted=True)
             except Exception:
                 logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
                 ctx.translation_stages = None
@@ -2570,7 +2570,7 @@ class MangaTranslator:
             ctx.img_rendered = ctx.img_inpainted
             try:
                 from manga_translator.stages_json import to_translation_stages
-                ctx.translation_stages = to_translation_stages(ctx)
+                ctx.translation_stages = to_translation_stages(ctx, include_inpainted=True)
             except Exception:
                 logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
                 ctx.translation_stages = None

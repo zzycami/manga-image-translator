@@ -26,5 +26,6 @@
 ## 本分支计划改动（后续）
 
 - [ ] `translate_only` 完整接线
-- [ ] 可选 `maskPngBase64` 下发
-- [ ] 与 Hub 契约对齐（TinyReader 不直连本服务裸端口）
+- [x] 可选 `inpaintedJpegBase64` / `skipRegionFill`（擦净底供客户端叠字）
+- [x] `fontSize` / `alignment` 写入 stages
+- [ ] 与 Hub 契约对齐（TinyReader 不直连本服务裸端口；**产品侧需双输出兼容旧 full**）
