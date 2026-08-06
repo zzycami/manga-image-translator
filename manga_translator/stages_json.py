@@ -50,6 +50,9 @@ class StageRegion(BaseModel):
     fgColor: str = "#000000"
     bgColor: str = "#FFFFFF"
     vertical: bool = False
+    # Mirror TextBlock fields used by manga_translator.rendering.text_render
+    fontSize: int = 0
+    alignment: str = "center"
 
 
 class TranslationStages(BaseModel):
@@ -90,6 +93,14 @@ def to_translation_stages(ctx: Context, include_mask: bool = False) -> Translati
             source_lang = blk.source_lang
         if target_lang is None and getattr(blk, "target_lang", None):
             target_lang = blk.target_lang
+        font_size = int(getattr(blk, "font_size", 0) or 0)
+        if font_size <= 0:
+            # Fallback: OCR-style estimate from box (same order of magnitude as MIT)
+            bw, bh = max(0, x2 - x1), max(0, y2 - y1)
+            font_size = max(1, min(bw, bh) if bool(getattr(blk, "vertical", False)) else max(1, bh // 2))
+        alignment = getattr(blk, "alignment", None) or "center"
+        if alignment not in ("left", "center", "right"):
+            alignment = "center"
         regions.append(
             StageRegion(
                 id=f"r{i}",
@@ -101,6 +112,8 @@ def to_translation_stages(ctx: Context, include_mask: bool = False) -> Translati
                 fgColor=_rgb_to_hex(fg),
                 bgColor=_rgb_to_hex(bg),
                 vertical=bool(getattr(blk, "vertical", False)),
+                fontSize=font_size,
+                alignment=alignment,
             )
         )
 
