@@ -88,6 +88,17 @@ def transform_to_image(ctx):
 def transform_to_json(ctx):
     return to_translation(ctx).model_dump_json().encode("utf-8")
 
+def transform_to_stages(ctx):
+    """Final stream frame (status=0): TranslationStages JSON for client erase+render."""
+    stages = getattr(ctx, "translation_stages", None)
+    if stages is None:
+        stages = to_translation_stages(ctx, include_mask=True, include_inpainted=False)
+    if isinstance(stages, TranslationStages):
+        return stages.model_dump_json().encode("utf-8")
+    if isinstance(stages, dict):
+        return json.dumps(stages, ensure_ascii=False).encode("utf-8")
+    return stages.model_dump_json().encode("utf-8")
+
 def transform_to_bytes(ctx):
     return to_translation(ctx).to_bytes()
 
@@ -165,6 +176,25 @@ async def stages_form(req: Request, image: UploadFile = File(...), config: str =
         include_mask=bool(getattr(conf, "stages_include_mask", True)),
         include_inpainted=bool(getattr(conf, "stages_include_inpainted", False)),
     )
+
+@app.post(
+    "/translate/with-form/stages/stream",
+    response_class=StreamingResponse,
+    tags=["api", "form"],
+    response_description=(
+        "Stream: 1byte status + 4byte size + payload. "
+        "status 0=stages JSON, 1=progress state (utf-8), 2=error, 3=queue pos, 4=waiting instance"
+    ),
+)
+async def stages_stream_form(
+    req: Request,
+    image: UploadFile = File(...),
+    config: str = Form("{}"),
+) -> StreamingResponse:
+    img = await image.read()
+    conf = Config.parse_raw(config)
+    conf.pipeline_mode = PipelineMode.json_stages
+    return await while_streaming(req, transform_to_stages, conf, img)
 
 @app.post("/translate/with-form/bytes", response_class=StreamingResponse, tags=["api", "form"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
 async def bytes_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")):
