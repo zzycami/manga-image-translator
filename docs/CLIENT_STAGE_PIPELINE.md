@@ -22,12 +22,13 @@
 - [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
 - [x] Mac 摸底：`tools/client_pipeline/bench_client_lama.py`（同款 `lama_large` + 原图 + mask）
 - [x] E2E：`tools/client_pipeline/run_e2e_client_pipeline.py`（mask→lama→native 叠字）
-- [x] ONNX 导出：`tools/client_pipeline/export_lama_onnx.py`（matmul DFT；`result/lama_onnx/lama_large_512.onnx` ≈206MB；ORT 与 PyTorch 对齐）
-- [ ] Android ORT 真机计时 / 量化（TinyReader `lama.onnx.path` 冒烟路径）
+- [x] ONNX 导出：`tools/client_pipeline/export_lama_onnx.py`（lama_large，matmul DFT，≈206MB）
+- [x] 移动端主路径：`tools/client_pipeline/export_aot_onnx.py`（AOT `inpainting.ckpt`，≈23MB；IO 同为 [0,1]）
+- [x] Android ORT 冒烟：入门机 AOT@384 ≈6.8s、AOT@256 ≈3.8s（相对 lama_large@512 ≈30s）
 - [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
-- [ ] Native/ONNX/Android 接入 lama（视摸底结论）
+- [x] Android ORT 接入（入门机默认 AOT；lama_large 仅高质量备用）
 
-配套：`../manga-translate-native`（几何擦净 `mt_render` ≥0.3.8 作 fallback；lama 端上推理待摸底后接线）
+配套：`../manga-translate-native`（几何擦净 `mt_render` ≥0.3.8 作 fallback；移动端擦净优先 AOT ONNX）
 
 ## 后续
 
