@@ -24,11 +24,27 @@
 - [x] E2E：`tools/client_pipeline/run_e2e_client_pipeline.py`（mask→lama→native 叠字）
 - [x] ONNX 导出：`tools/client_pipeline/export_lama_onnx.py`（lama_large，matmul DFT，≈206MB）
 - [x] 移动端主路径：`tools/client_pipeline/export_aot_onnx.py`（AOT `inpainting.ckpt`，≈23MB；IO 同为 [0,1]）
+- [x] iOS/Mac Core ML（Metal/ANE）：`tools/client_pipeline/export_aot_coreml.py`（先全量 FP32；bake ScaledWS*；产物 `result/lama_coreml/aot_{256,384}.mlpackage`）
 - [x] Android ORT 冒烟：入门机 AOT@384 ≈6.8s、AOT@256 ≈3.8s（相对 lama_large@512 ≈30s）
 - [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
 - [x] Android ORT 接入（入门机默认 AOT；lama_large 仅高质量备用）
+- [x] iOS App 接入 Core ML AOT + `mt_render`（`tinyreader`；见 `docs/MIT_DIRECT_IOS.md`；真机效果待手测）
 
-配套：`../manga-translate-native`（几何擦净 `mt_render` ≥0.3.8 作 fallback；移动端擦净优先 AOT ONNX）
+配套：`../manga-translate-native`（几何擦净 `mt_render` ≥0.3.8 作 fallback；移动端擦净优先 AOT ONNX / iOS Core ML）
+
+## 导出 AOT → Core ML（iOS / Mac）
+
+```bash
+# 需 coremltools（MIT venv：pip install 'coremltools>=8'）
+PYTHONPATH=. ./venv/bin/python tools/client_pipeline/export_aot_coreml.py \
+  --size 384 --smoke \
+  --image ../manga-translate-native/result/batch_hana_timing/005_005/page_work.jpg \
+  --mask  ../manga-translate-native/result/batch_hana_timing/005_005/mask_final.png
+```
+
+- 输出：`result/lama_coreml/aot_384.mlpackage`（≈23MB FP32）+ `smoke_aot_coreml_384.png`
+- 数值：相对 bake 后 PyTorch，`max_abs_diff` ~1e-5；Mac 上 Core ML 推理约数十 ms（非整页 App 路径）
+- 说明：coremltools 9 不再吃 ONNX；导出前把 `ScaledWSConv*` 的 `var_mean` **bake** 成普通 Conv，语义与 eval 一致
 
 ## 后续
 
