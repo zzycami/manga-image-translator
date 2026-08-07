@@ -98,6 +98,8 @@ class TranslationStages(BaseModel):
     inpaintedJpegBase64: Optional[str] = None
     skipRegionFill: bool = False
     pipelineMode: str = "json_stages"
+    # MD5 hex of raw upload bytes — Hub/client correlate response to page (additive; old clients ignore).
+    sourceImageMd5: Optional[str] = None
 
 
 def to_translation_stages(
@@ -105,6 +107,7 @@ def to_translation_stages(
     include_mask: bool = True,
     include_inpainted: bool = False,
     inpainted_jpeg_quality: int = 85,
+    source_image_md5: Optional[str] = None,
 ) -> TranslationStages:
     """Build stages JSON for client render.
 
@@ -174,6 +177,10 @@ def to_translation_stages(
         inpainted_b64 = _encode_jpeg_b64(ctx.img_inpainted, quality=inpainted_jpeg_quality)
         skip_fill = inpainted_b64 is not None
 
+    md5 = source_image_md5 or getattr(ctx, "source_image_md5", None)
+    if isinstance(md5, str):
+        md5 = md5.strip().lower() or None
+
     return TranslationStages(
         imageWidth=w,
         imageHeight=h,
@@ -184,6 +191,7 @@ def to_translation_stages(
         inpaintedJpegBase64=inpainted_b64,
         skipRegionFill=skip_fill,
         pipelineMode="json_stages",
+        sourceImageMd5=md5,
     )
 
 
@@ -191,7 +199,11 @@ def stages_dict(
     ctx: Context,
     include_mask: bool = True,
     include_inpainted: bool = False,
+    source_image_md5: Optional[str] = None,
 ) -> Dict[str, Any]:
     return to_translation_stages(
-        ctx, include_mask=include_mask, include_inpainted=include_inpainted
+        ctx,
+        include_mask=include_mask,
+        include_inpainted=include_inpainted,
+        source_image_md5=source_image_md5,
     ).model_dump()

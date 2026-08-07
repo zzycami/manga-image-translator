@@ -26,7 +26,15 @@ from manga_translator.config import PipelineMode
 from manga_translator.stages_json import TranslationStages, to_translation_stages
 from server.instance import ExecutorInstance, executor_instances
 from server.myqueue import task_queue
-from server.request_extraction import get_ctx, while_streaming, TranslateRequest, BatchTranslateRequest, get_batch_ctx
+from server.request_extraction import (
+    get_ctx,
+    while_streaming,
+    TranslateRequest,
+    BatchTranslateRequest,
+    get_batch_ctx,
+    resolve_raw_image_bytes,
+    bind_source_image_md5,
+)
 from server.to_json import to_translation, TranslationResponse
 
 app = FastAPI()
@@ -92,10 +100,20 @@ def transform_to_stages(ctx):
     """Final stream frame (status=0): TranslationStages JSON for client erase+render."""
     stages = getattr(ctx, "translation_stages", None)
     if stages is None:
-        stages = to_translation_stages(ctx, include_mask=True, include_inpainted=False)
+        stages = to_translation_stages(
+            ctx,
+            include_mask=True,
+            include_inpainted=False,
+            source_image_md5=getattr(ctx, "source_image_md5", None),
+        )
     if isinstance(stages, TranslationStages):
+        # Ensure md5 echo if pipeline built stages before config.bind
+        if not stages.sourceImageMd5 and getattr(ctx, "source_image_md5", None):
+            stages.sourceImageMd5 = ctx.source_image_md5
         return stages.model_dump_json().encode("utf-8")
     if isinstance(stages, dict):
+        if not stages.get("sourceImageMd5") and getattr(ctx, "source_image_md5", None):
+            stages["sourceImageMd5"] = ctx.source_image_md5
         return json.dumps(stages, ensure_ascii=False).encode("utf-8")
     return stages.model_dump_json().encode("utf-8")
 
@@ -116,13 +134,20 @@ async def json(req: Request, data: TranslateRequest):
 async def stages(req: Request, data: TranslateRequest):
     """Run pipeline with json_stages (skip server text render) and return SCHEMA 0.1.0 JSON."""
     data.config.pipeline_mode = PipelineMode.json_stages
-    ctx = await get_ctx(req, data.config, data.image)
+    img_bytes = await resolve_raw_image_bytes(data.image)
+    data.config, src_md5 = bind_source_image_md5(data.config, img_bytes)
+    ctx = await get_ctx(req, data.config, img_bytes)
+    ctx.source_image_md5 = src_md5
     if getattr(ctx, "translation_stages", None) is not None:
-        return ctx.translation_stages
+        stages_out = ctx.translation_stages
+        if isinstance(stages_out, TranslationStages) and not stages_out.sourceImageMd5:
+            stages_out.sourceImageMd5 = src_md5
+        return stages_out
     return to_translation_stages(
         ctx,
         include_mask=bool(getattr(data.config, "stages_include_mask", True)),
         include_inpainted=bool(getattr(data.config, "stages_include_inpainted", False)),
+        source_image_md5=src_md5,
     )
 
 @app.post("/translate/bytes", response_class=StreamingResponse, tags=["api", "json"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
@@ -164,17 +189,28 @@ async def json_form(req: Request, image: UploadFile = File(...), config: str = F
     tags=["api", "form"],
     response_description="Compact TranslationStages JSON for client-side render",
 )
-async def stages_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")):
+async def stages_form(
+    req: Request,
+    image: UploadFile = File(...),
+    config: str = Form("{}"),
+    source_image_md5: str | None = Form(None),
+):
     img = await image.read()
     conf = Config.parse_raw(config)
     conf.pipeline_mode = PipelineMode.json_stages
+    conf, src_md5 = bind_source_image_md5(conf, img, declared_md5=source_image_md5)
     ctx = await get_ctx(req, conf, img)
+    ctx.source_image_md5 = src_md5
     if getattr(ctx, "translation_stages", None) is not None:
-        return ctx.translation_stages
+        stages_out = ctx.translation_stages
+        if isinstance(stages_out, TranslationStages) and not stages_out.sourceImageMd5:
+            stages_out.sourceImageMd5 = src_md5
+        return stages_out
     return to_translation_stages(
         ctx,
         include_mask=bool(getattr(conf, "stages_include_mask", True)),
         include_inpainted=bool(getattr(conf, "stages_include_inpainted", False)),
+        source_image_md5=src_md5,
     )
 
 @app.post(
@@ -183,18 +219,23 @@ async def stages_form(req: Request, image: UploadFile = File(...), config: str =
     tags=["api", "form"],
     response_description=(
         "Stream: 1byte status + 4byte size + payload. "
-        "status 0=stages JSON, 1=progress state (utf-8), 2=error, 3=queue pos, 4=waiting instance"
+        "status 0=stages JSON, 1=progress state (utf-8), 2=error, 3=queue pos, 4=waiting instance, "
+        "5=meta JSON (request_id + source_image_md5)"
     ),
 )
 async def stages_stream_form(
     req: Request,
     image: UploadFile = File(...),
     config: str = Form("{}"),
+    request_id: str | None = Form(None),
+    source_image_md5: str | None = Form(None),
 ) -> StreamingResponse:
     img = await image.read()
     conf = Config.parse_raw(config)
     conf.pipeline_mode = PipelineMode.json_stages
-    return await while_streaming(req, transform_to_stages, conf, img)
+    conf, src_md5 = bind_source_image_md5(conf, img, declared_md5=source_image_md5)
+    meta = {"request_id": request_id, "source_image_md5": src_md5}
+    return await while_streaming(req, transform_to_stages, conf, img, meta=meta)
 
 @app.post("/translate/with-form/bytes", response_class=StreamingResponse, tags=["api", "form"],response_description="custom byte structure for decoding look at examples in 'examples/response.*'")
 async def bytes_form(req: Request, image: UploadFile = File(...), config: str = Form("{}")):
@@ -231,14 +272,19 @@ async def stream_bytes_form(req: Request, image: UploadFile = File(...), config:
     return await while_streaming(req, transform_to_bytes, conf, img)
 
 @app.post("/translate/with-form/image/stream", response_class=StreamingResponse, tags=["api", "form"], response_description="Standard streaming endpoint - returns complete image data. Suitable for API calls and scripts.")
-async def stream_image_form(req: Request, image: UploadFile = File(...), config: str = Form("{}"), request_id: str | None = Form(None)) -> StreamingResponse:
+async def stream_image_form(
+    req: Request,
+    image: UploadFile = File(...),
+    config: str = Form("{}"),
+    request_id: str | None = Form(None),
+    source_image_md5: str | None = Form(None),
+) -> StreamingResponse:
     """通用流式端点：返回完整图片数据，适用于API调用和comicread脚本"""
     img = await image.read()
     conf = Config.parse_raw(config)
     # 标记为通用模式，不使用占位符优化
     conf._web_frontend_optimized = False
-    import hashlib
-    src_md5 = hashlib.md5(img).hexdigest()
+    conf, src_md5 = bind_source_image_md5(conf, img, declared_md5=source_image_md5)
     meta = {"request_id": request_id, "source_image_md5": src_md5}
     return await while_streaming(req, transform_to_image, conf, img, meta=meta)
 

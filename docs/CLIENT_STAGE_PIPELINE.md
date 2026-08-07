@@ -20,13 +20,15 @@
 - [x] 默认不附带 `inpaintedJpegBase64`；`stages_include_inpainted=true` 可 opt-in
 - [x] `fontSize` / `alignment` 写入 stages
 - [x] API：`POST /translate/stages`、`POST /translate/with-form/stages`
+- [x] stages 响应加法字段 `sourceImageMd5`（原始上传字节 MD5 小写 hex）；form 可选 `source_image_md5` 声明不一致则 422
+- [x] `/translate/with-form/stages/stream` 发 status=5 meta（`request_id` + `source_image_md5`），与 image/stream 对齐
 - [x] Mac 摸底：`tools/client_pipeline/bench_client_lama.py`（同款 `lama_large` + 原图 + mask）
 - [x] E2E：`tools/client_pipeline/run_e2e_client_pipeline.py`（mask→lama→native 叠字）
 - [x] ONNX 导出：`tools/client_pipeline/export_lama_onnx.py`（lama_large，matmul DFT，≈206MB）
 - [x] 移动端主路径：`tools/client_pipeline/export_aot_onnx.py`（AOT `inpainting.ckpt`，≈23MB；IO 同为 [0,1]）
 - [x] iOS/Mac Core ML（Metal/ANE）：`tools/client_pipeline/export_aot_coreml.py`（先全量 FP32；bake ScaledWS*；产物 `result/lama_coreml/aot_{256,384}.mlpackage`）
 - [x] Android ORT 冒烟：入门机 AOT@384 ≈6.8s、AOT@256 ≈3.8s（相对 lama_large@512 ≈30s）
-- [ ] Hub comic-translate 透传 `pipelineMode`（TinyReader 侧）
+- [x] Hub comic-translate 透传 `pipelineMode`（TinyReader / pixivlite-server；见 `app/doc/comic-translate-pipeline-mode.md`）
 - [x] Android ORT 接入（入门机默认 AOT；lama_large 仅高质量备用）
 - [x] iOS App 接入 Core ML AOT + `mt_render`（`tinyreader`；见 `docs/MIT_DIRECT_IOS.md`；真机效果待手测）
 

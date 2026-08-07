@@ -1,9 +1,10 @@
 import asyncio
 import builtins
+import hashlib
 import io
 import re
 from base64 import b64decode
-from typing import Union
+from typing import Optional, Tuple, Union
 
 import requests
 from PIL import Image
@@ -30,6 +31,51 @@ class BatchTranslateRequest(BaseModel):
     """Translation configuration"""
     batch_size: int = 4
     """Batch size, default is 4"""
+
+async def resolve_raw_image_bytes(image: Union[str, bytes]) -> bytes:
+    """Raw file bytes used for MD5 correlation (same bytes Hub/client hash)."""
+    try:
+        if isinstance(image, builtins.bytes):
+            if len(image) == 0:
+                raise ValueError("Image data is empty")
+            return image
+        if re.match(r'^data:image/.+;base64,', image):
+            value = image.split(',', 1)[1]
+            image_data = b64decode(value)
+            if len(image_data) == 0:
+                raise ValueError("Decoded image data is empty")
+            return image_data
+        response = requests.get(image)
+        if len(response.content) == 0:
+            raise ValueError("Downloaded image data is empty")
+        return response.content
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to load image bytes: {str(e)}")
+
+
+def bind_source_image_md5(
+    config: Config,
+    image_bytes: bytes,
+    declared_md5: Optional[str] = None,
+) -> Tuple[Config, str]:
+    """Compute MD5 of raw upload bytes; reject if client-declared md5 mismatches.
+
+    Fills config.source_image_md5 with the server-computed value for stages echo.
+    """
+    if not image_bytes:
+        raise HTTPException(status_code=422, detail="Image file is empty")
+    src_md5 = hashlib.md5(image_bytes).hexdigest()
+    declared = (declared_md5 or config.source_image_md5 or "").strip().lower()
+    if declared and declared != src_md5:
+        raise HTTPException(
+            status_code=422,
+            detail=f"SOURCE_IMAGE_MD5_MISMATCH: declared={declared}, received={src_md5}",
+        )
+    config.source_image_md5 = src_md5
+    return config, src_md5
+
 
 async def to_pil_image(image: Union[str, bytes]) -> Image.Image:
     try:

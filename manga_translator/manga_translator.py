@@ -623,10 +623,12 @@ class MangaTranslator:
             ctx.img_rendered = ctx.img_inpainted
             try:
                 from manga_translator.stages_json import to_translation_stages
+                md5 = getattr(config, 'source_image_md5', None) or getattr(ctx, 'source_image_md5', None)
                 ctx.translation_stages = to_translation_stages(
                     ctx,
                     include_mask=bool(getattr(config, 'stages_include_mask', True)),
                     include_inpainted=bool(getattr(config, 'stages_include_inpainted', False)),
+                    source_image_md5=md5,
                 )
             except Exception:
                 logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")
@@ -2589,10 +2591,12 @@ class MangaTranslator:
             ctx.img_rendered = ctx.img_inpainted
             try:
                 from manga_translator.stages_json import to_translation_stages
+                md5 = getattr(config, 'source_image_md5', None) or getattr(ctx, 'source_image_md5', None)
                 ctx.translation_stages = to_translation_stages(
                     ctx,
                     include_mask=bool(getattr(config, 'stages_include_mask', True)),
                     include_inpainted=bool(getattr(config, 'stages_include_inpainted', False)),
+                    source_image_md5=md5,
                 )
             except Exception:
                 logger.error(f"Failed to build translation_stages:\n{traceback.format_exc()}")

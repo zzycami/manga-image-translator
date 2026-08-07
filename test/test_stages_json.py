@@ -29,6 +29,7 @@ def test_to_translation_stages_basic():
     assert stages.schemaVersion == SCHEMA_VERSION
     assert stages.imageWidth == 100
     assert stages.imageHeight == 200
+    assert stages.sourceImageMd5 is None
     assert len(stages.regions) == 1
     r = stages.regions[0]
     assert r.id == "r0"
@@ -45,6 +46,11 @@ def test_to_translation_stages_basic():
     assert dumped.get("inpaintedJpegBase64") in (None, "")
     assert stages.maskPngBase64
     assert len(stages.maskPngBase64) > 20
+
+    stages_md5 = to_translation_stages(
+        ctx, include_inpainted=False, source_image_md5="AbCDEF0123456789"
+    )
+    assert stages_md5.sourceImageMd5 == "abcdef0123456789"
 
     stages_no_mask = to_translation_stages(ctx, include_mask=False, include_inpainted=False)
     assert stages_no_mask.maskPngBase64 in (None, "")
