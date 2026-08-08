@@ -1,0 +1,16 @@
+# Overlay latest server/manga_translator onto a base image that already has /app/models.
+# Avoids re-downloading multi‑GB weights when shipping json_stages / bugfixes.
+#
+#   docker build -f Dockerfile.overlay \
+#     --build-arg BASE_IMAGE=manga-translator-backup:latest \
+#     -t manga-translator:json-stages .
+
+ARG BASE_IMAGE=manga-translator-backup:latest
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+COPY manga_translator /app/manga_translator
+COPY server /app/server
+
+ENV PYTHONPATH="/app"
