@@ -1,0 +1,21 @@
+{
+  "title": "MIT 专用 OCR 转 iOS Core ML 探针",
+  "createdAt": "2026-08-08T21:29:00+08:00",
+  "subtasks": [
+    {
+      "id": "export-spike",
+      "description": "encoder + decoder_step0 导出",
+      "status": "done"
+    },
+    {
+      "id": "mac-smoke",
+      "description": "竖排 warp + encoder 数值 + beam PT",
+      "status": "done"
+    },
+    {
+      "id": "verdict",
+      "description": "可上 iOS 但需解码循环/ORT；~200MB",
+      "status": "done"
+    }
+  ]
+}

@@ -100,6 +100,8 @@ class TranslationStages(BaseModel):
     pipelineMode: str = "json_stages"
     # MD5 hex of raw upload bytes — Hub/client correlate response to page (additive; old clients ignore).
     sourceImageMd5: Optional[str] = None
+    # Server-side wall ms per progress state (detection/ocr/translating/…). Additive; old clients ignore.
+    stageTimingsMs: Optional[Dict[str, float]] = None
 
 
 def to_translation_stages(
@@ -181,6 +183,12 @@ def to_translation_stages(
     if isinstance(md5, str):
         md5 = md5.strip().lower() or None
 
+    timings = getattr(ctx, "stage_timings_ms", None)
+    if isinstance(timings, dict):
+        timings = {str(k): float(v) for k, v in timings.items()}
+    else:
+        timings = None
+
     return TranslationStages(
         imageWidth=w,
         imageHeight=h,
@@ -192,6 +200,7 @@ def to_translation_stages(
         skipRegionFill=skip_fill,
         pipelineMode="json_stages",
         sourceImageMd5=md5,
+        stageTimingsMs=timings,
     )
 
 

@@ -1,0 +1,46 @@
+{
+  "title": "MIT stages A/B：3样例基线→det/ocr→textline_merge/LLM",
+  "createdAt": "2026-08-08T12:10:00Z",
+  "subtasks": [
+    {
+      "id": "harness",
+      "description": "bench_mit_stages_ab.py",
+      "status": "done"
+    },
+    {
+      "id": "baseline-opt",
+      "description": "对 LAN Docker 跑 baseline + det1024",
+      "status": "done"
+    },
+    {
+      "id": "verdict",
+      "description": "写 progress 结论",
+      "status": "done"
+    },
+    {
+      "id": "next-ocr32",
+      "description": "ocr=32px A/B（不采纳）",
+      "status": "done"
+    },
+    {
+      "id": "opt-merge-once",
+      "description": "textline_merge 去重复 merge（正确性保留，非性能主刀）",
+      "status": "done"
+    },
+    {
+      "id": "opt-simple-sort",
+      "description": "force_simple_sort A/B（~−27% 总耗时；阅读序可能变）",
+      "status": "done"
+    },
+    {
+      "id": "opt-llm",
+      "description": "LLM 去 few-shot（不加速，不采纳）",
+      "status": "done"
+    },
+    {
+      "id": "hub-decision",
+      "description": "确认是否默认 force_simple_sort",
+      "status": "pending"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "title": "iOS 探针：端上检测+OCR（先 Vision）",
+  "createdAt": "2026-08-08T21:20:00+08:00",
+  "subtasks": [
+    {
+      "id": "harness",
+      "description": "Mac Swift/Vision 对三页跑 detect+OCR，对比 MIT stages",
+      "status": "done"
+    },
+    {
+      "id": "verdict",
+      "description": "Vision OCR 否决；框检测有信号；下一刀裁块上传或 CTD",
+      "status": "done"
+    }
+  ]
+}

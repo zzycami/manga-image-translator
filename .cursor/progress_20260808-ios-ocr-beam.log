@@ -1,0 +1,4 @@
+2026-08-08T21:56:30+08:00 beam-runtime started
+2026-08-08T22:00:00+08:00 beam-runtime done ORT enc + PT beam_k=5
+2026-08-08T22:01:00+08:00 smoke-3pages done ort_eq_pt_all=true mean_prefix_mit=1.0
+2026-08-08T22:02:00+08:00 verdict done native 下一刀见 OCR48_BEAM_RUNTIME.md

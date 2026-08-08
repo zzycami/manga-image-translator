@@ -366,6 +366,7 @@ class MangaTranslator:
         :param image_name: Deprecated parameter, kept for compatibility.
         :return: Translation context.
         """
+        self._reset_stage_timings()
         await self._report_progress('running_pre_translation_hooks')
         for hook in self._progress_hooks:
             try:
@@ -624,6 +625,8 @@ class MangaTranslator:
             try:
                 from manga_translator.stages_json import to_translation_stages
                 md5 = getattr(config, 'source_image_md5', None) or getattr(ctx, 'source_image_md5', None)
+                self._finalize_stage_timings()
+                ctx.stage_timings_ms = dict(getattr(self, "_stage_timings_ms", {}) or {})
                 ctx.translation_stages = to_translation_stages(
                     ctx,
                     include_mask=bool(getattr(config, 'stages_include_mask', True)),
@@ -796,36 +799,33 @@ class MangaTranslator:
     async def _run_textline_merge(self, config: Config, ctx: Context):
         current_time = time.time()
         self._model_usage_timestamps[("textline_merge", "textline_merge")] = current_time
-        text_regions = await dispatch_textline_merge(ctx.textlines, ctx.img_rgb.shape[1], ctx.img_rgb.shape[0],
-                                                     verbose=self.verbose)
-        for region in text_regions:
-            if not hasattr(region, "text_raw"):
-                region.text_raw = region.text      # <- Save the initial OCR results to expand the render detection box. Also, prevent affecting the forbidden translation function.       
-        # Filter out languages to skip  
-        if config.translator.skip_lang is not None:  
-            skip_langs = [lang.strip().upper() for lang in config.translator.skip_lang.split(',')]  
-            filtered_textlines = []  
-            for txtln in ctx.textlines:  
-                try:  
+        # Filter languages on OCR lines *before* merge so we only dispatch once.
+        # (Previously merge ran twice; the first pass's text_raw was discarded.)
+        if config.translator.skip_lang is not None:
+            skip_langs = [lang.strip().upper() for lang in config.translator.skip_lang.split(',')]
+            filtered_textlines = []
+            for txtln in ctx.textlines:
+                try:
                     detected_lang, confidence = langid.classify(txtln.text)
                     source_language = ISO_639_1_TO_VALID_LANGUAGES.get(detected_lang, 'UNKNOWN')
                     if source_language != 'UNKNOWN':
                         source_language = source_language.upper()
-                except Exception:  
-                    source_language = 'UNKNOWN'  
-    
-                # Print detected source_language and whether it's in skip_langs  
-                # logger.info(f'Detected source language: {source_language}, in skip_langs: {source_language in skip_langs}, text: "{txtln.text}"')  
-    
-                if source_language in skip_langs:  
-                    logger.info(f'Filtered out: {txtln.text}')  
-                    logger.info(f'Reason: Detected language {source_language} is in skip_langs')  
-                    continue  # Skip this region  
-                filtered_textlines.append(txtln)  
-            ctx.textlines = filtered_textlines  
-    
-        text_regions = await dispatch_textline_merge(ctx.textlines, ctx.img_rgb.shape[1], ctx.img_rgb.shape[0],  
-                                                     verbose=self.verbose)  
+                except Exception:
+                    source_language = 'UNKNOWN'
+
+                if source_language in skip_langs:
+                    logger.info(f'Filtered out: {txtln.text}')
+                    logger.info(f'Reason: Detected language {source_language} is in skip_langs')
+                    continue
+                filtered_textlines.append(txtln)
+            ctx.textlines = filtered_textlines
+
+        text_regions = await dispatch_textline_merge(ctx.textlines, ctx.img_rgb.shape[1], ctx.img_rgb.shape[0],
+                                                     verbose=self.verbose)
+        for region in text_regions:
+            if not hasattr(region, "text_raw"):
+                # Save OCR text before later dictionary/bracket edits (render box + forbidden-translate).
+                region.text_raw = region.text
 
         new_text_regions = []
         for region in text_regions:
@@ -1443,7 +1443,33 @@ class MangaTranslator:
     def add_progress_hook(self, ph):
         self._progress_hooks.append(ph)
 
+    def _reset_stage_timings(self):
+        """Wall-clock per progress state (server-side; immune to HTTP stream buffering)."""
+        self._stage_timings_ms = {}
+        self._prog_last_t = time.perf_counter()
+        self._prog_last_state = None
+
+    def _finalize_stage_timings(self):
+        now = time.perf_counter()
+        prev = getattr(self, "_prog_last_state", None)
+        last_t = getattr(self, "_prog_last_t", None)
+        if prev and last_t is not None:
+            dt = (now - last_t) * 1000.0
+            self._stage_timings_ms[prev] = self._stage_timings_ms.get(prev, 0.0) + dt
+            self._prog_last_t = now
+
     async def _report_progress(self, state: str, finished: bool = False):
+        now = time.perf_counter()
+        if not hasattr(self, "_stage_timings_ms") or self._stage_timings_ms is None:
+            self._reset_stage_timings()
+            now = self._prog_last_t
+        prev = getattr(self, "_prog_last_state", None)
+        last_t = getattr(self, "_prog_last_t", now)
+        if prev is not None:
+            dt = (now - last_t) * 1000.0
+            self._stage_timings_ms[prev] = self._stage_timings_ms.get(prev, 0.0) + dt
+        self._prog_last_t = now
+        self._prog_last_state = state
         for ph in self._progress_hooks:
             await ph(state, finished)
 
@@ -2592,6 +2618,8 @@ class MangaTranslator:
             try:
                 from manga_translator.stages_json import to_translation_stages
                 md5 = getattr(config, 'source_image_md5', None) or getattr(ctx, 'source_image_md5', None)
+                self._finalize_stage_timings()
+                ctx.stage_timings_ms = dict(getattr(self, "_stage_timings_ms", {}) or {})
                 ctx.translation_stages = to_translation_stages(
                     ctx,
                     include_mask=bool(getattr(config, 'stages_include_mask', True)),

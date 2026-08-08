@@ -1,0 +1,10 @@
+2026-08-08T22:00:00+08:00 started manga-translate-native ORT OCR48 beam C ABI
+2026-08-08T22:10:00+08:00 export-dec-steps done step_000..007 smoke; later 008..023
+2026-08-08T22:20:00+08:00 native-ort-beam done mt_ocr48 + ocr48_smoke
+2026-08-08T22:25:00+08:00 smoke done r0 高嶺華; r1 truncated until per-polygon
+2026-08-08T22:35:00+08:00 note root cause: strip_from_region used only polygons[0]
+2026-08-08T22:40:00+08:00 smoke done per-line join ort_eq_mit_all=true on 3 pages; native strips match
+2026-08-08T22:42:00+08:00 note next: default@1536 detect → textline warp → mt_ocr48
+2026-08-08T22:22:00+08:00 mobile-ocr-ondevice-abandoned done 手机放弃端上OCR；OCR上云；下一刀区域检测召回
+2026-08-08T22:46:00+08:00 oss-ecosystem-watchlist done 开源观察清单入 progress；立场：开源保下限，产品靠自研
+2026-08-08T22:56:00+08:00 note 本轮尝试结束：无明显可上线优化；待正式 MIT 服务更新后再推客户端

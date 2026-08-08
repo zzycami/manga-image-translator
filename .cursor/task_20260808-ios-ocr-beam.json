@@ -1,0 +1,26 @@
+{
+  "title": "端上 OCR beam=5 运行时（对齐 MIT）",
+  "createdAt": "2026-08-08T21:56:00+08:00",
+  "subtasks": [
+    {
+      "id": "beam-runtime",
+      "description": "ORT encoder + PT beam",
+      "status": "done"
+    },
+    {
+      "id": "smoke-3pages",
+      "description": "三页 ort_eq_pt_all=true",
+      "status": "done"
+    },
+    {
+      "id": "verdict",
+      "description": "progress + native 文档",
+      "status": "done"
+    },
+    {
+      "id": "native-port",
+      "description": "C ABI / iOS 接入",
+      "status": "pending"
+    }
+  ]
+}

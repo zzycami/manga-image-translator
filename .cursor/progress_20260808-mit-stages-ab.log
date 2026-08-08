@@ -1,0 +1,9 @@
+2026-08-08T12:10:34Z started baseline+det1024 on 192.168.31.156:8000
+2026-08-08T12:15:00Z baseline+det1024 done local8010_20260808_201457; det1024 rejected (quality fail, ~2% time)
+2026-08-08T12:15:00Z note stageTimingsMs added to stages JSON; stream mark deltas unreliable
+2026-08-08T12:17:37Z opt-ocr-32px in_progress
+2026-08-08T12:31:52Z opt-ocr-32px done REJECTED slower+worse quality docker
+2026-08-08T20:52:00+08:00 opt-merge-once started 假设：skip_lang=None 时双次 dispatch_textline_merge 可省 ~半段 textline_merge
+2026-08-08T20:56:00+08:00 opt-merge-once done 双次 merge 非瓶颈；保留单次 merge+text_raw 修复
+2026-08-08T20:57:00+08:00 opt-simple-sort done force_simple_sort 总耗时 16.8→12.2s；merge ~1s→~80ms；007/033 阅读序变；待 Hub 决策
+2026-08-08T20:59:00+08:00 opt-llm done 去 few-shot 不加速；不采纳

@@ -1,0 +1,21 @@
+{
+  "title": "manga-translate-native：ORT OCR48 beam C ABI",
+  "createdAt": "2026-08-08T22:00:00+08:00",
+  "subtasks": [
+    {
+      "id": "export-dec-steps",
+      "description": "导出 decoder step ONNX（0..23；脚本 export_ocr48_decoder_steps.py）",
+      "status": "done"
+    },
+    {
+      "id": "native-ort-beam",
+      "description": "C++ ORT encoder + step decoder + beam=5 + C ABI",
+      "status": "done"
+    },
+    {
+      "id": "smoke",
+      "description": "Mac ocr48_smoke 对齐 Python runtime；逐 polygon 拼接=MIT",
+      "status": "done"
+    }
+  ]
+}

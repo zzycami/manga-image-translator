@@ -1,0 +1,116 @@
+[
+  {
+    "id": "bench-harness",
+    "description": "可复现的 stages/stream A/B 脚本：固定样例、分阶段耗时、stages 质量对比",
+    "acceptance": "一条命令可对同组图片跑 baseline 与 variant，输出 JSON 汇总（总耗时、detection/ocr/translating、region/OCR/译文对比）",
+    "passes": true
+  },
+  {
+    "id": "baseline-3pages",
+    "description": "对 batch_hana_timing 三页跑当前 Hub 配置基线（det=default@1536, ocr=48px, custom_openai）",
+    "acceptance": "result/bench_mit_stages_ab/.../baseline/summary.json 含 3 页分阶段耗时与 stages 快照",
+    "passes": true
+  },
+  {
+    "id": "opt-detection-size",
+    "description": "试 detection_size=1024（其余同基线），同图复测",
+    "acceptance": "有 variant 汇总；相对基线报告耗时差；OCR/框质量有明确 pass/fail 或可解释差异",
+    "passes": true
+  },
+  {
+    "id": "verdict-doc",
+    "description": "在 tasks/progress.md 写清：是否有效、建议是否合入 Hub 默认配置",
+    "acceptance": "progress 含结论表与下一步（OCR 档位或 LLM）",
+    "passes": true
+  },
+  {
+    "id": "opt-ocr-32px",
+    "description": "试 ocr=32px，同三页对比耗时与 OCR/框质量（结论：更慢且质量差，不采纳）",
+    "acceptance": "compare.json；若质量过关且 OCR/总耗时稳定下降则记入 progress 建议",
+    "passes": true
+  },
+  {
+    "id": "opt-llm-next",
+    "description": "下一刀：LLM/translating 或 textline_merge（先量 stageTimingsMs 再改）",
+    "acceptance": "有明确假设、A/B 目录与是否采纳结论写入 progress",
+    "passes": true
+  },
+  {
+    "id": "hub-simple-sort-decision",
+    "description": "产品确认是否将 force_simple_sort 设为 Hub json_stages 默认（阅读序 vs ~0.9s/页）",
+    "acceptance": "progress 记下决策；若采纳则 Hub/MIT 默认配置同步并冒烟",
+    "passes": false
+  },
+  {
+    "id": "ios-vision-ocr-spike",
+    "description": "iOS/Mac Vision 端上检测+OCR 探针：三页对比 MIT stages（耗时/框/OCR）",
+    "acceptance": "有 compare 汇总；明确 Vision 是否足以支撑 translate_only 探针",
+    "passes": true
+  },
+  {
+    "id": "ios-client-det-ocr-next",
+    "description": "若 Vision 不够：再评估 CTD/自研 OCR Core ML；够则接 translate_only 草案",
+    "acceptance": "progress 记下分支决策",
+    "passes": true
+  },
+  {
+    "id": "ios-ocr48-coreml-export",
+    "description": "ocr_ar_48px 导出 Core ML（encoder + decoder_step0）并 Mac 冒烟",
+    "acceptance": "result/ocr_coreml 有 mlpackage；encoder 与 PT 数值接近；progress 写明解码缺口与体积",
+    "passes": true
+  },
+  {
+    "id": "quality-first-decision",
+    "description": "体积可接受：端上对齐 default@1536 + ocr48 beam5，不做轻量凑合",
+    "acceptance": "progress 写明决策与包体量级",
+    "passes": true
+  },
+  {
+    "id": "ios-det-default-export",
+    "description": "default 检测导出 ONNX/CoreML@1536",
+    "acceptance": "result/det_onnx 有 onnx 与/或 mlpackage",
+    "passes": true
+  },
+  {
+    "id": "ios-ocr-beam-runtime",
+    "description": "端上 beam=5 解码接通（ORT/C++ 或 Core ML step 循环），质量对齐 MIT",
+    "acceptance": "同三页 OCR soft/exact 接近服务端；progress 记路径",
+    "passes": true
+  },
+  {
+    "id": "ios-ocr-beam-native",
+    "description": "manga-translate-native：ORT encoder + beam=5 解码进 C ABI，供 iOS 调用",
+    "acceptance": "Mac/iOS 能对 strip 出与 Python runtime 一致的文本；有冒烟",
+    "passes": true
+  },
+  {
+    "id": "ios-ocr-textline-join",
+    "description": "端上 OCR 必须按 textline/polygon 逐条再拼接，勿对 merge 后整区单 strip",
+    "acceptance": "三页 stages regions 逐 polygon OCR 拼接后 ort_eq_mit_all=true；文档写明",
+    "passes": true
+  },
+  {
+    "id": "ios-det-textline-warp",
+    "description": "端上跑 default@1536 检测 → textline 框 → 48px warp → mt_ocr48",
+    "acceptance": "不依赖服务端 stages 多边形即可出与 MIT 接近的 sourceText；有 Mac 冒烟",
+    "passes": false
+  },
+  {
+    "id": "mobile-ocr-ondevice-abandoned",
+    "description": "手机产品放弃端上专用 OCR；OCR 上云；Mac 桌面路径可保留为技术储备",
+    "acceptance": "progress 写明 Mac 可行 / 手机不可用原因（内存·包体·获客）与下一刀聚焦区域检测",
+    "passes": true
+  },
+  {
+    "id": "client-region-detect-recall",
+    "description": "端上文字区域检测：测召回（相对 MIT 框），控漏检策略（阈值/回退整页）",
+    "acceptance": "三页相对 MIT regions 的 recall/漏框列表入 result；progress 定是否采用 Vision 或轻量 det",
+    "passes": false
+  },
+  {
+    "id": "oss-ecosystem-watchlist",
+    "description": "记录开源对标清单与立场：开源保下限，上线竞争力靠自研",
+    "acceptance": "progress 含 MIT/Rust/manga-ocr/comic-translate/Ballons/Momo 观察表与产品路径",
+    "passes": true
+  }
+]

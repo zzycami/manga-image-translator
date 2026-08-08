@@ -1,0 +1,3 @@
+2026-08-08T21:20:30+08:00 harness started iOS-first Vision OCR spike on Mac
+2026-08-08T21:22:00+08:00 harness done Vision OCR ~0.1-0.2s/页但命中≈0；DetectTextRectangles 10/21/9 框有信号
+2026-08-08T21:23:00+08:00 verdict done 纯 Vision OCR 不可做 B；算力 OK；建议 A 裁块或自研漫画 OCR
