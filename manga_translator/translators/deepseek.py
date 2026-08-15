@@ -11,6 +11,7 @@ import time
 from typing import List
 from .common import MissingAPIKeyException
 from .common_gpt import CommonGPTTranslator
+from .common_gpt import parse_indexed_translations
 from .keys import DEEPSEEK_API_KEY, DEEPSEEK_API_BASE, DEEPSEEK_MODEL
 from .tokenizers.token_counters import deepseekTokenCounter
 
@@ -140,41 +141,28 @@ class DeepseekTranslator(CommonGPTTranslator):
                     response = await request_task  
                     self.logger.debug(f'-- GPT Response{split_prefix} --\n' + response)  
 
-                    # Split response into translations  
-                    new_translations = re.split(r'<\|\d+\|>', response)  
-                    
-                    # 立即清理每个翻译文本的前后空格
-                    # Immediately clean leading and trailing whitespace from each translation text
-                    new_translations = [t.strip() for t in new_translations]
-                    
-                    if not new_translations[0].strip():  
-                        new_translations = new_translations[1:]
+                    # Map translations back by their <|N|> index (response line
+                    # order is not trusted; LLMs may reorder or drop items).
+                    new_translations = parse_indexed_translations(response, query_size)
+                    if new_translations is None and len(prompt_queries) == 1:
+                        stripped = response.strip()
+                        if stripped and not re.match(r'^\s*<\|\d+\|>', stripped):
+                            new_translations = [stripped]
 
-                    if len(prompt_queries) == 1 and len(new_translations) == 1 and not re.match(r'^\s*<\|\d+\|>', response):  
-                        self.logger.warning(f'Single query response does not contain prefix, retrying...(Attempt {attempt + 1})')  
-                        continue  
-
-                    if len(new_translations) < query_size:  
-                        # Try splitting by newlines instead  
-                        new_translations = re.split(r'\n', response)  
-
-                    if len(new_translations) < query_size:  
+                    if new_translations is None:
                         remaining_attempts = RETRY_ATTEMPTS - attempt - 1  
-                        self.logger.warning(f'Incomplete response, remaining {remaining_attempts} time(s) before splitting the translation.')  
+                        self.logger.warning(
+                            f'Malformed or incomplete response, remaining {remaining_attempts} '
+                            'time(s) before splitting the translation.'
+                        )
                         continue  
 
-                    # Trim excess translations and pad if necessary  
-                    new_translations = new_translations[:query_size] + [''] * (query_size - len(new_translations))  
-                    # Clean translations by keeping only the content before the first newline  
-                    new_translations = [t.split('\n')[0].strip() for t in new_translations]  
-                    # Remove any potential prefix markers  
-                    new_translations = [re.sub(r'^\s*<\|\d+\|>\s*', '', t) for t in new_translations]  
                     # Check if any translations are empty  
                     if any(not t.strip() for t in new_translations):  
                         self.logger.warning(f'Empty translations detected. Resplitting the batch.') 
                         break  # Exit retry loop and trigger split logic below 
 
-                    # Store the translations in the correct indices  
+                    # Store the translations at their request indices  
                     for idx, translation in zip(prompt_query_indices, new_translations):  
                         translations[idx] = translation  
 

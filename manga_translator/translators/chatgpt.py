@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from .. import manga_translator
 from .config_gpt import ConfigGPT
+from .common_gpt import parse_indexed_translations
 from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
 from .keys import OPENAI_API_KEY, OPENAI_HTTP_PROXY, OPENAI_API_BASE, OPENAI_MODEL, OPENAI_GLOSSARY_PATH
 
@@ -224,13 +225,15 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
                     if orig_stage_flag:
                         self._is_stage2_translation = orig_stage_flag
 
-                fb_translations = [t.strip() for t in re.split(r'<\|\d+\|>', response_text_fb)]
-                if fb_translations and not fb_translations[0]:
-                    fb_translations = fb_translations[1:]
+                fb_translations = parse_indexed_translations(response_text_fb, len(batch_queries))
+                if fb_translations is None and len(batch_queries) == 1:
+                    stripped = response_text_fb.strip()
+                    if stripped and not re.match(r'^\s*<\|\d+\|>', stripped):
+                        fb_translations = [stripped]
 
                 # 检查 fallback 模型是否提供了有效的翻译
-                if len(fb_translations) != len(batch_queries):
-                    self.logger.warning(f"Fallback output count mismatch: expected {len(batch_queries)}, got {len(fb_translations)}. Fallback failed.")
+                if fb_translations is None or len(fb_translations) != len(batch_queries):
+                    self.logger.warning(f"Fallback output malformed: expected {len(batch_queries)} numbered items. Fallback failed.")
                     continue  # 继续重试而不是返回成功
 
                 # 检查是否所有翻译都是空的或与原文相同
@@ -441,6 +444,17 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
                 if not is_valid_format:  
                     #await asyncio.sleep(RETRY_BACKOFF_BASE + attempt * RETRY_BACKOFF_FACTOR) # 格式错误重试前等待并退避  
                     continue # 进入下一次重试 / Proceed to next retry  
+
+                # 将响应按 <|N|> 编号映射回请求顺序（响应行顺序不可信）。
+                # 上面的校验只保证索引集合齐全，不保证输出顺序与请求一致。
+                if not merged_single_query:
+                    indexed_translations = parse_indexed_translations(response_text, len(batch_queries))
+                    if indexed_translations is None:
+                        self.logger.warning(
+                            f"[Attempt {attempt+1}/{max_attempts}] Numbered response could not be mapped back to queries. Retrying..."
+                        )
+                        continue
+                    new_translations = indexed_translations
                 
                 # 跳过经常性的模型幻觉字符
                 # Skip common hallucination characters in specific models

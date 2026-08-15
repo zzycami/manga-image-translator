@@ -27,28 +27,37 @@ class MangaShare:
 
         # each chunk has a structure like this status_code(int/1byte),len(int/4bytes),bytechunk
         # status codes are 0 for result, 1 for progress report, 2 for error
-        self.progress_queue = asyncio.Queue()
+        # Result frames are delivered through a per-request queue: a shared queue
+        # could hand the previous request's leftover frames to the next request
+        # when a stream is abandoned mid-run (e.g. client timeout while the
+        # translation keeps going), causing a stale result to be delivered to the
+        # wrong request. The lock below guarantees one translation at a time, so a
+        # single "active queue" member is safe.
+        self._active_queue: asyncio.Queue | None = None
         self.lock = Lock()
 
         async def hook(state: str, finished: bool):
             state_data = state.encode("utf-8")
             progress_data = b'\x01' + len(state_data).to_bytes(4, 'big') + state_data
-            await self.progress_queue.put(progress_data)
+            queue = self._active_queue
+            if queue is not None:
+                await queue.put(progress_data)
             await asyncio.sleep(0)
 
         self.manga.add_progress_hook(hook)
 
-    async def progress_stream(self):
+    async def progress_stream(self, queue: asyncio.Queue):
         """
         loops until the status is != 1 which is eiter an error or the result
         """
         while True:
-            progress = await self.progress_queue.get()
+            progress = await queue.get()
             yield progress
             if progress[0] != 1:
                 break
 
-    async def run_method(self, method, **attributes):
+    async def run_method(self, method, queue: asyncio.Queue, **attributes):
+        self._active_queue = queue
         try:
             if asyncio.iscoroutinefunction(method):
                 result = await method(**attributes)
@@ -68,12 +77,14 @@ class MangaShare:
                 result_bytes = pickle.dumps(result)
 
             encoded_result = b'\x00' + len(result_bytes).to_bytes(4, 'big') + result_bytes
-            await self.progress_queue.put(encoded_result)
+            await queue.put(encoded_result)
         except Exception as e:
             err_bytes = str(e).encode("utf-8")
             encoded_result = b'\x02' + len(err_bytes).to_bytes(4, 'big') + err_bytes
-            await self.progress_queue.put(encoded_result)
+            await queue.put(encoded_result)
         finally:
+            if self._active_queue is queue:
+                self._active_queue = None
             self.lock.release()
 
 
@@ -133,9 +144,12 @@ class MangaShare:
             config = attr.get('config')
             self.manga._is_streaming_mode = getattr(config, '_web_frontend_optimized', False) if config else False
 
+            # Per-request result queue: never reuse frames across requests.
+            queue = asyncio.Queue()
+            self._active_queue = queue
             # streaming response
-            streaming_response = StreamingResponse(self.progress_stream(), media_type="application/octet-stream")
-            asyncio.create_task(self.run_method(method, **attr))
+            streaming_response = StreamingResponse(self.progress_stream(queue), media_type="application/octet-stream")
+            asyncio.create_task(self.run_method(method, queue, **attr))
             return streaming_response
 
         config = uvicorn.Config(app, host=self.host, port=self.port)

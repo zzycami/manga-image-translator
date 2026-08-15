@@ -9,6 +9,56 @@ from .common import CommonTranslator, VALID_LANGUAGES
 from typing import List, Dict
 
 
+def _is_cjk(ch: str) -> bool:
+    """CJK ideographs / kana / hangul (for continuation-line joining)."""
+    return (
+        '\u3040' <= ch <= '\u30ff'
+        or '\u4e00' <= ch <= '\u9fff'
+        or '\uac00' <= ch <= '\ud7af'
+    )
+
+
+def parse_indexed_translations(response_text: str, expected_count: int) -> List[str] | None:
+    """Map a '<|N|>text' numbered response back to request positions by index.
+
+    Response line order is NOT trusted: every translation is placed at the
+    position given by its <|N|> marker (1-based). Non-marker lines before the
+    first marker are treated as preamble and ignored; non-marker lines after a
+    marker continue that translation.
+
+    Returns a list of length ``expected_count`` (translations in request order),
+    or None when the response is malformed (missing/duplicate/out-of-range
+    index, or an empty translation).
+    """
+    result: List[str | None] = [None] * expected_count
+    seen: set[int] = set()
+    current_idx: int | None = None
+    for line in response_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r'^\s*<\|(\d+)\|>\s*(.*)$', line)
+        if m:
+            idx = int(m.group(1))
+            if idx < 1 or idx > expected_count or idx in seen:
+                return None
+            seen.add(idx)
+            current_idx = idx
+            result[idx - 1] = m.group(2).strip()
+        elif current_idx is None:
+            # Preamble before the first marker (e.g. "好的，以下是翻译：").
+            continue
+        else:
+            # Continuation of the current translation (LLMs wrap long lines).
+            prev = result[current_idx - 1]
+            if prev and _is_cjk(prev[-1]) and _is_cjk(line[0]):
+                result[current_idx - 1] = prev + line
+            else:
+                result[current_idx - 1] = prev + ' ' + line
+    if len(seen) != expected_count or any(t is None or not t.strip() for t in result):
+        return None
+    return [t for t in result if t is not None]
+
 
 class CommonGPTTranslator(ConfigGPT, CommonTranslator):
     """

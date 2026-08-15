@@ -2,6 +2,7 @@ import re
 
 from ..config import TranslatorConfig
 from .config_gpt import ConfigGPT  # Import the `gpt_config` parsing parent class
+from .common_gpt import parse_indexed_translations
 
 try:
     import openai
@@ -21,6 +22,7 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
     _RETRY_ATTEMPTS = 3  # 在放弃之前重试错误请求的次数
     _TIMEOUT_RETRY_ATTEMPTS = 3  # 在放弃之前重试超时请求的次数
     _RATELIMIT_RETRY_ATTEMPTS = 3  # 在放弃之前重试速率限制请求的次数
+    _PARSE_RETRY_ATTEMPTS = 3  # 编号响应无法按索引归位时的重试次数
 
     # 最大令牌数量，用于控制处理的文本长度
     _MAX_TOKENS = 4096
@@ -118,6 +120,19 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
                 prompt,
             ])
 
+    def _parse_translations(self, response: str, query_size: int) -> List[str] | None:
+        """Parse a numbered response into request order (by <|N|> index)."""
+        response = self.extract_capture_groups(response, rf"{self.rgx_capture}") or response
+        # Sometimes it will return line like "<|9>demo", and we need to fix it.
+        response = re.sub(r"<\|?(\d+)\|?>", lambda m: f"<|{m.group(1)}|>", response)
+        parsed = parse_indexed_translations(response, query_size)
+        if parsed is not None:
+            return parsed
+        # When there is only one query LLMs like to exclude the <|1|> entirely.
+        if query_size == 1 and response.strip() and not re.search(r'<\|\d+\|>', response):
+            return [response.strip()]
+        return None
+
     async def _translate(self, from_lang: str, to_lang: str, queries: List[str]) -> List[str]:
         translations = []
         self.logger.debug(f'Temperature: {self.temperature}, TopP: {self.top_p}')
@@ -128,6 +143,7 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
             ratelimit_attempt = 0
             server_error_attempt = 0
             timeout_attempt = 0
+            parse_attempt = 0
             while True:
                 request_task = asyncio.create_task(self._request_translation(to_lang, prompt))
                 started = time.time()
@@ -144,7 +160,6 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
                         started = time.time()
                 try:
                     response = await request_task
-                    break
                 except openai.RateLimitError:  # Server returned ratelimit response
                     ratelimit_attempt += 1
                     if ratelimit_attempt >= self._RATELIMIT_RETRY_ATTEMPTS:
@@ -152,6 +167,7 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
                     self.logger.warning(
                         f'Restarting request due to ratelimiting by Ollama servers. Attempt: {ratelimit_attempt}')
                     await asyncio.sleep(2)
+                    continue
                 except openai.APIError:  # Server returned 500 error (probably server load)
                     server_error_attempt += 1
                     if server_error_attempt >= self._RETRY_ATTEMPTS:
@@ -160,50 +176,23 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
                         raise
                     self.logger.warning(f'Restarting request due to a server error. Attempt: {server_error_attempt}')
                     await asyncio.sleep(1)
+                    continue
 
-            # self.logger.debug('-- GPT Response --\n' + response)
-            
-
-            # Use regex to extract response 
-            response=self.extract_capture_groups(response, rf"{self.rgx_capture}")
-
-
-            # Sometimes it will return line like "<|9>demo", and we need to fix it.
-            def add_pipe(match):
-                number = match.group(1)
-                return f"<|{number}|>"
-            response = re.sub(r"<\|?(\d+)\|?>", add_pipe, response)
-            
-
-            # self.logger.debug('-- GPT Response (filtered) --\n' + response)
-
-            # @NOTE: This should *should* be superflous now, due to `extract_capture_groups`:
-            # 
-            # Remove any text preceeding the first translation.
-            new_translations = re.split(r'<\|\d+\|>', 'pre_1\n' + response)[1:]
-            # new_translations = re.split(r'<\|\d+\|>', response)
-
-            # When there is only one query LLMs likes to exclude the <|1|>
-            if not new_translations:
-                new_translations = [response]
-
-            # Immediately clean leading and trailing whitespace from each translation text
-            new_translations = [t.strip() for t in new_translations]
-
-            # When there is only one query LLMs likes to exclude the <|1|> # Maybe it can be removed, but it causes no errors
-            if not new_translations[0].strip():
-                new_translations = new_translations[1:]
-
-            if len(new_translations) <= 1 and query_size > 1:
-                # Try splitting by newlines instead
-                new_translations = re.split(r'\n', response)
-
-            if len(new_translations) > query_size:
-                new_translations = new_translations[: query_size]
-            elif len(new_translations) < query_size:
-                new_translations = new_translations + [''] * (query_size - len(new_translations))
-
-            translations.extend([t.strip() for t in new_translations])
+                # self.logger.debug('-- GPT Response --\n' + response)
+                parsed = self._parse_translations(response, query_size)
+                if parsed is not None:
+                    translations.extend(parsed)
+                    break
+                parse_attempt += 1
+                if parse_attempt >= self._PARSE_RETRY_ATTEMPTS:
+                    raise Exception(
+                        'Translator returned a malformed numbered response '
+                        f'(expected {query_size} items) after {parse_attempt} attempts'
+                    )
+                self.logger.warning(
+                    f'Malformed numbered response (expected {query_size} items), '
+                    f'retrying... (attempt {parse_attempt}/{self._PARSE_RETRY_ATTEMPTS})'
+                )
 
         for t in translations:
             if "I'm sorry, but I can't assist with that request" in t:
