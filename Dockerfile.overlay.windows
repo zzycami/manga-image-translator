@@ -1,0 +1,36 @@
+# Windows backup box overlay (Docker Desktop / WSL2).
+#
+# The official upstream base (zyddnys/manga-image-translator:main) does NOT ship:
+#   - rusty_manga_image_translator (Rust detector extension) -> startup crash
+#     when detection/__init__.py imports .paddle_rust
+#   - detect-20241225.ckpt (current default detector weights) -> 294MB download
+#     on first request after every rebuild
+# This Dockerfile keeps the base's pure-python paddle detector and bakes the
+# missing weights into the image so rebuilds are self-contained.
+#
+#   docker build -f Dockerfile.overlay.windows \
+#     --build-arg BASE_IMAGE=zyddnys/manga-image-translator:main \
+#     -t manga-translator:json-stages .
+#
+# See scripts/mit_overlay_update_windows.sh for the full update flow.
+
+ARG BASE_IMAGE=zyddnys/manga-image-translator:main
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+COPY manga_translator /app/manga_translator
+COPY server /app/server
+
+# Windows base has no Rust detector extension: fall back to the bundled
+# pure-python paddle detector (same behavior as the pre-json-stages build).
+RUN sed -i 's/\r$//' /app/manga_translator/detection/__init__.py \
+ && sed -i 's/^from \.paddle_rust import PaddleDetector$/from .paddle import PaddleDetector/' \
+      /app/manga_translator/detection/__init__.py \
+ && grep -q '^from \.paddle import PaddleDetector$' /app/manga_translator/detection/__init__.py
+
+# Current default detector needs detect-20241225.ckpt; bake it so rebuilds
+# never re-download it on the first request.
+COPY models/detection/detect-20241225.ckpt /app/models/detection/detect-20241225.ckpt
+
+ENV PYTHONPATH="/app"

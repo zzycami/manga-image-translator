@@ -238,3 +238,61 @@ SMOKE_URL=http://127.0.0.1:8000 \
 | 日期 | 内容 |
 |------|------|
 | 2026-08-09 | 首次从 `manga-translator-backup:latest` overlay 到 `json-stages`；修 `to_json` OpenAPI；冒烟 full + stages（含 stream）通过 |
+| 2026-08-15 | 上线「译文按编号归位 + 每请求结果队列」修复（`98168f5`）；Windows 与正式服同步更新 |
+
+---
+
+## 8. Windows 备用机（diffusion.pivlite.com:7001）更新
+
+备用机 = 局域网的 Windows（Docker Desktop），通过 frp 穿透暴露为
+`http://diffusion.pivlite.com:7001`。它的 Linux 环境 SSH 可达（如
+`zhouzeyong@192.168.31.156`），更新方式与正式机一致：**先 Windows、后正式服**。
+
+### 一键脚本（推荐）
+
+在开发机（Mac）仓库根目录执行：
+
+```bash
+MIT_WIN_SSHPASS='<Windows Linux 的 SSH 密码>' \
+SMOKE_IMAGE=result/client_stage_smoke/page_1600.jpg \
+./scripts/mit_overlay_update_windows.sh
+```
+
+脚本会：rsync 代码 + `detect-20241225.ckpt` + `Dockerfile.overlay.windows` 到
+`~/mit-overlay-src` → 用 Windows 专用 Dockerfile 构建（自动切回基础镜像自带的
+`paddle` 检测器、并把检测权重烤进镜像）→ 备份并切换容器 → 冒烟。
+
+密码也可走 SSH 密钥（不设 `MIT_WIN_SSHPASS` 即可）。更多参数见脚本头部注释。
+
+### Windows 与正式机的基础镜像差异（务必知道）
+
+Windows 基础镜像是官方 `zyddnys/manga-image-translator:main`，**缺两样东西**，
+`Dockerfile.overlay.windows` 已自动处理：
+
+1. **没有 Rust 检测扩展**（`rusty_manga_image_translator`）——当前 main 的
+   `detection/__init__.py` 引用 `.paddle_rust` 会直接启动崩溃。Windows 构建会把
+   该行改回基础镜像自带的 `.paddle`。
+2. **没有 `detect-20241225.ckpt`**（294MB）——默认检测器第一次请求会重新下载。
+   Windows 构建把权重 COPY 进镜像，重建不再触发下载。
+
+正式机基础镜像是自建 `manga-translator-backup:latest`，两者都有，继续用通用
+`Dockerfile.overlay` 即可，不要混用。
+
+### 手工更新（不跑脚本时）
+
+```bash
+# 1) rsync 代码 + 权重 + Windows Dockerfile
+REMOTE=zhouzeyong@192.168.31.156
+rsync -az --delete -e "sshpass -p '<密码>' ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no" \
+  --exclude '.git' --exclude 'venv' --exclude 'result' --exclude '__pycache__' --exclude '*.pyc' \
+  ./Dockerfile.overlay.windows ./scripts ./manga_translator ./server \
+  ./models/detection/detect-20241225.ckpt "$REMOTE:~/mit-overlay-src/"
+
+# 2) 远程构建（.dockerignore 需排除 models/* 但放行 detect-20241225.ckpt）
+ssh "$REMOTE" 'cd ~/mit-overlay-src && \
+  "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe" build \
+  -f Dockerfile.overlay.windows --build-arg BASE_IMAGE=zyddnys/manga-image-translator:main \
+  -t manga-translator:json-stages .'
+
+# 3) 切换容器（先 docker tag 旧镜像为 .prev，再停/改名/起新容器），4) 冒烟 8000
+```
