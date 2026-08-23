@@ -18,6 +18,14 @@ def _is_cjk(ch: str) -> bool:
     )
 
 
+def normalize_index_markers(text: str) -> str:
+    """Normalize <|N|> index markers before parsing.
+
+    LLMs occasionally emit extra pipes, e.g. ``<|3||>`` instead of ``<|3|>``.
+    """
+    return re.sub(r'<\|*(\d+)\|*>', lambda m: f'<|{m.group(1)}|>', text)
+
+
 def parse_indexed_translations(response_text: str, expected_count: int) -> List[str] | None:
     """Map a '<|N|>text' numbered response back to request positions by index.
 
@@ -30,6 +38,7 @@ def parse_indexed_translations(response_text: str, expected_count: int) -> List[
     or None when the response is malformed (missing/duplicate/out-of-range
     index, or an empty translation).
     """
+    response_text = normalize_index_markers(response_text)
     result: List[str | None] = [None] * expected_count
     seen: set[int] = set()
     current_idx: int | None = None

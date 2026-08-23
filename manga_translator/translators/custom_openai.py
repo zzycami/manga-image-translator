@@ -2,7 +2,7 @@ import re
 
 from ..config import TranslatorConfig
 from .config_gpt import ConfigGPT  # Import the `gpt_config` parsing parent class
-from .common_gpt import parse_indexed_translations
+from .common_gpt import normalize_index_markers, parse_indexed_translations
 
 try:
     import openai
@@ -135,8 +135,7 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
     def _parse_translations(self, response: str, query_size: int) -> List[str] | None:
         """Parse a numbered response into request order (by <|N|> index)."""
         response = self.extract_capture_groups(response, rf"{self.rgx_capture}") or response
-        # Sometimes it will return line like "<|9>demo", and we need to fix it.
-        response = re.sub(r"<\|?(\d+)\|?>", lambda m: f"<|{m.group(1)}|>", response)
+        response = normalize_index_markers(response)
         parsed = parse_indexed_translations(response, query_size)
         if parsed is not None:
             return parsed

@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from manga_translator.translators.common_gpt import parse_indexed_translations
+from manga_translator.translators.common_gpt import normalize_index_markers, parse_indexed_translations
 from manga_translator.translators.custom_openai import CustomOpenAiTranslator
 from manga_translator.translators.deepseek import DeepseekTranslator
 
@@ -28,6 +28,13 @@ def test_parse_indexed_in_order():
 def test_parse_indexed_reordered():
     resp = "<|4|>救命！\n<|2|>你是谁？\n<|1|>那个…\n<|3|>这里是哪里？"
     assert parse_indexed_translations(resp, 4) == ORDERED
+
+
+def test_parse_indexed_extra_pipe_in_marker():
+    # Volcengine ARK occasionally emits <|3||> instead of <|3|>.
+    resp = "<|1|>那个…\n<|2|>你是谁？\n<|3||>这里是哪里？\n<|4|>救命！"
+    assert parse_indexed_translations(resp, 4) == ORDERED
+    assert normalize_index_markers("<|3||>x") == "<|3|>x"
 
 
 def test_parse_indexed_with_preamble_and_continuation():
