@@ -11,7 +11,7 @@ except ImportError:
 import asyncio
 import time
 from typing import List
-from .common import CommonTranslator, VALID_LANGUAGES
+from .common import CommonTranslator, VALID_LANGUAGES, resolve_llm_language_pair
 from .keys import CUSTOM_OPENAI_API_KEY, CUSTOM_OPENAI_API_BASE, CUSTOM_OPENAI_MODEL, CUSTOM_OPENAI_MODEL_CONF
 
 
@@ -50,6 +50,18 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
 
     def parse_args(self, args: TranslatorConfig):
         self.config = args.chatgpt_config
+
+    def parse_language_codes(self, from_lang: str, to_lang: str, fatal: bool = False):
+        return resolve_llm_language_pair(self, from_lang, to_lang, fatal=fatal)
+
+    @property
+    def chat_system_template(self) -> str:
+        return self._config_get('chat_system_template', self._CHAT_SYSTEM_TEMPLATE_CONCISE)
+
+    @property
+    def temperature(self) -> float:
+        # Volcengine ARK: lower default than generic GPT translators to reduce target-lang drift.
+        return self._config_get('temperature', 0.2)
 
 
     def extract_capture_groups(self, text, regex=r"(.*)"):
@@ -206,8 +218,8 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
     async def _request_translation(self, to_lang: str, prompt: str) -> str:
         messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
 
-        # Add chat samples if available
-        lang_chat_samples = self.get_chat_sample(to_lang)
+        few_shot_lang = getattr(self, '_few_shot_to_lang', to_lang)
+        lang_chat_samples = self.get_chat_sample(few_shot_lang)
         if lang_chat_samples:
             messages.append({'role': 'user', 'content': lang_chat_samples[0]})
             messages.append({'role': 'assistant', 'content': lang_chat_samples[1]})

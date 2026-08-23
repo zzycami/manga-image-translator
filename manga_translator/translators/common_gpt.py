@@ -5,7 +5,7 @@ from abc import abstractmethod
 import time
 
 from .config_gpt import ConfigGPT, TextValue, TranslationList
-from .common import CommonTranslator, VALID_LANGUAGES
+from .common import CommonTranslator, VALID_LANGUAGES, resolve_llm_language_pair
 from typing import List, Dict
 
 
@@ -106,6 +106,9 @@ class CommonGPTTranslator(ConfigGPT, CommonTranslator):
 
     def parse_args(self, args: CommonTranslator):
         self.config = args.chatgpt_config
+
+    def parse_language_codes(self, from_lang: str, to_lang: str, fatal: bool = False):
+        return resolve_llm_language_pair(self, from_lang, to_lang, fatal=fatal)
 
     @abstractmethod
     def count_tokens(self, text: str) -> int:
@@ -277,9 +280,11 @@ class CommonGPTTranslator(ConfigGPT, CommonTranslator):
     def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
         messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
 
-        if to_lang in self.chat_sample:
-            messages.append({'role': 'user', 'content': self.chat_sample[to_lang][0]})
-            messages.append({'role': 'assistant', 'content': self.chat_sample[to_lang][1]})
+        few_shot_lang = getattr(self, '_few_shot_to_lang', to_lang)
+        sample = self.get_chat_sample(few_shot_lang)
+        if sample:
+            messages.append({'role': 'user', 'content': sample[0]})
+            messages.append({'role': 'assistant', 'content': sample[1]})
 
         messages.append({'role': 'user', 'content': prompt})
 

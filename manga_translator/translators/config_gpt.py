@@ -59,6 +59,15 @@ class ConfigGPT:
         
         'Translate the following text into {to_lang}:\n'  
     )
+
+    # Shorter system prompt for OpenAI-compatible gateways (Volcengine ARK, etc.).
+    _CHAT_SYSTEM_TEMPLATE_CONCISE = (
+        'You are a professional manga and doujin translation engine.\n'
+        'Translate each numbered line into {to_lang}.\n'
+        'Keep the <|number|> prefix on every line. Output only the translation for each line—no commentary.\n'
+        'Preserve sound effects and untranslatable tokens as-is.\n'
+        'If a line is already in {to_lang} or is gibberish, output it unchanged.\n'
+    )
   
     _CHAT_SAMPLE = {
         'Chinese (Simplified)': [

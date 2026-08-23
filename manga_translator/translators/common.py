@@ -40,6 +40,39 @@ VALID_LANGUAGES = {
     'FIL': 'Filipino (Tagalog)'
 }
 
+# Natural-language names for LLM system prompts ({to_lang}). Few-shot samples still
+# use VALID_LANGUAGES keys (e.g. "Chinese (Simplified)").
+PROMPT_LANGUAGE_NAMES: dict[str, str] = {
+    'CHS': 'Simplified Chinese',
+    'CHT': 'Traditional Chinese',
+    'PTB': 'Brazilian Portuguese',
+    'FIL': 'Filipino',
+}
+
+
+def language_name_for_prompt(lang_code: str) -> str:
+    if lang_code in PROMPT_LANGUAGE_NAMES:
+        return PROMPT_LANGUAGE_NAMES[lang_code]
+    return VALID_LANGUAGES.get(lang_code, lang_code)
+
+
+def language_name_for_few_shot(lang_code: str) -> str:
+    return VALID_LANGUAGES.get(lang_code, lang_code)
+
+
+def resolve_llm_language_pair(translator: 'CommonTranslator', from_lang: str, to_lang: str, fatal: bool = False) -> Tuple[str, str]:
+    """Map MIT language codes to (from_api, to_prompt) and stash few-shot key on translator."""
+    if not translator.supports_languages(from_lang, to_lang, fatal):
+        return None, None
+    if type(translator._LANGUAGE_CODE_MAP) is list:
+        translator._few_shot_to_lang = language_name_for_few_shot(to_lang)
+        return from_lang, language_name_for_prompt(to_lang)
+
+    _from_lang = translator._LANGUAGE_CODE_MAP.get(from_lang) if from_lang != 'auto' else 'auto'
+    translator._few_shot_to_lang = language_name_for_few_shot(to_lang)
+    _to_lang = language_name_for_prompt(to_lang)
+    return _from_lang, _to_lang
+
 ISO_639_1_TO_VALID_LANGUAGES = {
     'zh': 'CHS',
     'ja': 'JPN',
@@ -152,7 +185,10 @@ class CommonTranslator(InfererModule):
             raise ValueError('Invalid language code: "%s". Choose from the following: %s' % (to_lang, ', '.join(VALID_LANGUAGES)))
         if from_lang not in VALID_LANGUAGES and from_lang != 'auto':
             raise ValueError('Invalid language code: "%s". Choose from the following: auto, %s' % (from_lang, ', '.join(VALID_LANGUAGES)))
-        self.logger.info(f'Translating into {VALID_LANGUAGES[to_lang]}')
+        self.logger.info(
+            f'Translating into {language_name_for_prompt(to_lang)} '
+            f'(code={to_lang}, few-shot={language_name_for_few_shot(to_lang)})'
+        )
 
         if from_lang == to_lang:
             return queries
