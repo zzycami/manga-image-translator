@@ -2,9 +2,9 @@
   "title": "修复 LLM 编号 <|N||> 畸形并部署两台 MIT 服务器",
   "createdAt": "2026-08-23T14:18:00+08:00",
   "subtasks": [
-    {"id": "1", "description": "提交 normalize_index_markers 修复与回归测试", "status": "in_progress"},
-    {"id": "2", "description": "部署 Windows 备用机 diffusion.pivlite.com:7001", "status": "pending"},
-    {"id": "3", "description": "部署线上正式机 106.75.246.172:8000", "status": "pending"},
-    {"id": "4", "description": "双机冒烟验证", "status": "pending"}
+    {"id": "1", "description": "提交 normalize_index_markers 修复与回归测试", "status": "done"},
+    {"id": "2", "description": "部署 Windows 备用机 diffusion.pivlite.com:7001", "status": "done"},
+    {"id": "3", "description": "部署线上正式机 106.75.246.172:8000", "status": "done"},
+    {"id": "4", "description": "双机冒烟验证", "status": "done"}
   ]
 }

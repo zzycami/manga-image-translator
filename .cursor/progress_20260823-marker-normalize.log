@@ -1,1 +1,5 @@
 2026-08-23T14:18:00+08:00 started task_20260823-marker-normalize
+2026-08-23T14:18:30+08:00 done subtask-1 commit 38d1f2d normalize_index_markers
+2026-08-23T14:19:30+08:00 done subtask-2 Windows overlay STAGES_OK regions=10
+2026-08-23T14:19:00+08:00 done subtask-3 prod overlay container recreated
+2026-08-23T14:20:00+08:00 done subtask-4 prod+pivlite smoke 200; normalize_index_markers verified in containers
