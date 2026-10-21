@@ -8,6 +8,7 @@ mapping introduced to fix that.
 """
 
 import asyncio
+import re
 
 import pytest
 
@@ -70,7 +71,7 @@ async def test_custom_openai_reordered_response():
         ]
     )
 
-    async def fake_request(to_lang: str, prompt: str) -> str:
+    async def fake_request(to_lang: str, prompt: str, temperature: float | None = None) -> str:
         return next(responses)
 
     translator._request_translation = fake_request
@@ -88,7 +89,7 @@ async def test_custom_openai_malformed_then_ok_retries():
         ]
     )
 
-    async def fake_request(to_lang: str, prompt: str) -> str:
+    async def fake_request(to_lang: str, prompt: str, temperature: float | None = None) -> str:
         return next(responses)
 
     translator._request_translation = fake_request
@@ -100,12 +101,50 @@ async def test_custom_openai_malformed_then_ok_retries():
 async def test_custom_openai_persistent_malformed_raises():
     translator = CustomOpenAiTranslator(check_openai_key=False)
 
-    async def fake_request(to_lang: str, prompt: str) -> str:
-        return "<|1|>那个…\n<|3|>这里是哪里？"  # always malformed
+    async def fake_request(to_lang: str, prompt: str, temperature: float | None = None) -> str:
+        return "<|1|>那个…\n<|3|>这里是哪里？"  # always malformed (even after splits)
 
     translator._request_translation = fake_request
     with pytest.raises(Exception, match="malformed numbered response"):
         await translator._translate("JPN", "CHS", QUERIES)
+
+
+@pytest.mark.asyncio
+async def test_custom_openai_split_recovers_when_full_batch_merges():
+    """Mirrors production failure: model merges OCR-split lines on the full batch.
+
+    After parse retries, the batch is split; smaller batches return complete
+    numbered replies and the page succeeds instead of failing outright.
+    """
+    translator = CustomOpenAiTranslator(check_openai_key=False)
+    # Keep parse retries low so the test reaches split quickly.
+    translator._PARSE_RETRY_ATTEMPTS = 2
+
+    async def fake_request(to_lang: str, prompt: str, temperature: float | None = None) -> str:
+        body = prompt.split("IMPORTANT:")[0]
+        n = len(re.findall(r"<\|(\d+)\|>", body))
+        if n >= 4:
+            # Same class of bug as task 975433: drop/merge so count is short.
+            return "<|1|>那个…\n<|2|>你是谁？\n<|3|>这里是哪里？"
+        if n == 2:
+            # Reconstruct from the two source lines in the prompt.
+            src = re.findall(r"<\|(\d+)\|>(.*)", body)
+            out = []
+            for idx, text in src:
+                # Map known fixtures; fall back to echoing for robustness.
+                mapping = dict(zip(QUERIES, ORDERED))
+                out.append(f"<|{idx}|>{mapping.get(text.strip(), text.strip())}")
+            return "\n".join(out)
+        if n == 1:
+            m = re.search(r"<\|1\|>(.*)", body)
+            src = (m.group(1).strip() if m else "").split("\n")[0]
+            mapping = dict(zip(QUERIES, ORDERED))
+            return f"<|1|>{mapping.get(src, src)}"
+        return "<|1|>?"
+
+    translator._request_translation = fake_request
+    result = await translator._translate("JPN", "CHS", QUERIES)
+    assert result == ORDERED
 
 
 @pytest.mark.asyncio

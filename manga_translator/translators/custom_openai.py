@@ -22,7 +22,8 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
     _RETRY_ATTEMPTS = 3  # 在放弃之前重试错误请求的次数
     _TIMEOUT_RETRY_ATTEMPTS = 3  # 在放弃之前重试超时请求的次数
     _RATELIMIT_RETRY_ATTEMPTS = 3  # 在放弃之前重试速率限制请求的次数
-    _PARSE_RETRY_ATTEMPTS = 3  # 编号响应无法按索引归位时的重试次数
+    _PARSE_RETRY_ATTEMPTS = 3  # 编号响应无法按索引归位时、拆分前的重试次数
+    _MAX_SPLIT_ATTEMPTS = 5  # 解析仍失败时对半拆批的最大层数（与 Deepseek/ChatGPT 一致）
 
     # 最大令牌数量，用于控制处理的文本长度
     _MAX_TOKENS = 4096
@@ -144,66 +145,154 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
             return [response.strip()]
         return None
 
+    @staticmethod
+    def _parse_retry_suffix(query_size: int) -> str:
+        """Nudge the model after a malformed numbered reply (common: merging lines)."""
+        return (
+            f'\n\nIMPORTANT: Your previous reply was invalid. '
+            f'Output exactly {query_size} lines with prefixes '
+            f'<|1|> through <|{query_size}|>. '
+            f'Do not merge lines. Do not skip or renumber items.'
+        )
+
     async def _translate(self, from_lang: str, to_lang: str, queries: List[str]) -> List[str]:
-        translations = []
+        """Translate with parse retries, then split the batch like Deepseek/ChatGPT.
+
+        Strict index parsing prevents silent region misalignment; when the model
+        keeps merging OCR-split lines (e.g. expected 6, got 5), splitting the
+        batch usually recovers instead of failing the whole page.
+        """
+        translations = [''] * len(queries)
         self.logger.debug(f'Temperature: {self.temperature}, TopP: {self.top_p}')
 
-        for prompt, query_size in self._assemble_prompts(from_lang, to_lang, queries):
-            self.logger.debug('-- GPT Prompt --\n' + self._format_prompt_log(to_lang, prompt))
+        async def translate_batch(
+            prompt_queries: List[str],
+            prompt_query_indices: List[int],
+            split_level: int = 0,
+        ) -> bool:
+            split_prefix = ' (split)' if split_level > 0 else ''
+            prompt, query_size = next(self._assemble_prompts(from_lang, to_lang, prompt_queries))
+            self.logger.debug(
+                f'-- GPT Prompt{split_prefix} --\n' + self._format_prompt_log(to_lang, prompt)
+            )
 
-            ratelimit_attempt = 0
-            server_error_attempt = 0
-            timeout_attempt = 0
-            parse_attempt = 0
-            while True:
-                request_task = asyncio.create_task(self._request_translation(to_lang, prompt))
-                started = time.time()
-                while not request_task.done():
-                    await asyncio.sleep(0.1)
-                    if time.time() - started > self._TIMEOUT + (timeout_attempt * self._TIMEOUT / 2):
-                        # Server takes too long to respond
-                        if timeout_attempt >= self._TIMEOUT_RETRY_ATTEMPTS:
-                            raise Exception('ollama servers did not respond quickly enough.')
-                        timeout_attempt += 1
-                        self.logger.warning(f'Restarting request due to timeout. Attempt: {timeout_attempt}')
-                        request_task.cancel()
-                        request_task = asyncio.create_task(self._request_translation(to_lang, prompt))
-                        started = time.time()
-                try:
-                    response = await request_task
-                except openai.RateLimitError:  # Server returned ratelimit response
-                    ratelimit_attempt += 1
-                    if ratelimit_attempt >= self._RATELIMIT_RETRY_ATTEMPTS:
-                        raise
-                    self.logger.warning(
-                        f'Restarting request due to ratelimiting by Ollama servers. Attempt: {ratelimit_attempt}')
-                    await asyncio.sleep(2)
-                    continue
-                except openai.APIError:  # Server returned 500 error (probably server load)
-                    server_error_attempt += 1
-                    if server_error_attempt >= self._RETRY_ATTEMPTS:
-                        self.logger.error(
-                            'Ollama encountered a server error, possibly due to high server load. Use a different translator or try again later.')
-                        raise
-                    self.logger.warning(f'Restarting request due to a server error. Attempt: {server_error_attempt}')
-                    await asyncio.sleep(1)
-                    continue
+            for attempt in range(self._PARSE_RETRY_ATTEMPTS):
+                request_prompt = prompt
+                request_temperature = self.temperature
+                if attempt > 0:
+                    request_prompt = prompt + self._parse_retry_suffix(query_size)
+                    # Slightly raise temperature so retries are less likely to
+                    # repeat the same merge/skip pattern.
+                    request_temperature = min(self.temperature + 0.15 * attempt, 0.7)
 
-                # self.logger.debug('-- GPT Response --\n' + response)
+                ratelimit_attempt = 0
+                server_error_attempt = 0
+                timeout_attempt = 0
+                while True:
+                    request_task = asyncio.create_task(
+                        self._request_translation(
+                            to_lang,
+                            request_prompt,
+                            temperature=request_temperature,
+                        )
+                    )
+                    started = time.time()
+                    while not request_task.done():
+                        await asyncio.sleep(0.1)
+                        if time.time() - started > self._TIMEOUT + (
+                            timeout_attempt * self._TIMEOUT / 2
+                        ):
+                            if timeout_attempt >= self._TIMEOUT_RETRY_ATTEMPTS:
+                                raise Exception('ollama servers did not respond quickly enough.')
+                            timeout_attempt += 1
+                            self.logger.warning(
+                                f'Restarting request due to timeout. Attempt: {timeout_attempt}'
+                            )
+                            request_task.cancel()
+                            request_task = asyncio.create_task(
+                                self._request_translation(
+                                    to_lang,
+                                    request_prompt,
+                                    temperature=request_temperature,
+                                )
+                            )
+                            started = time.time()
+                    try:
+                        response = await request_task
+                        break
+                    except openai.RateLimitError:
+                        ratelimit_attempt += 1
+                        if ratelimit_attempt >= self._RATELIMIT_RETRY_ATTEMPTS:
+                            raise
+                        self.logger.warning(
+                            'Restarting request due to ratelimiting by Ollama servers. '
+                            f'Attempt: {ratelimit_attempt}'
+                        )
+                        await asyncio.sleep(2)
+                    except openai.APIError:
+                        server_error_attempt += 1
+                        if server_error_attempt >= self._RETRY_ATTEMPTS:
+                            self.logger.error(
+                                'Ollama encountered a server error, possibly due to high '
+                                'server load. Use a different translator or try again later.'
+                            )
+                            raise
+                        self.logger.warning(
+                            f'Restarting request due to a server error. '
+                            f'Attempt: {server_error_attempt}'
+                        )
+                        await asyncio.sleep(1)
+
                 parsed = self._parse_translations(response, query_size)
                 if parsed is not None:
-                    translations.extend(parsed)
-                    break
-                parse_attempt += 1
-                if parse_attempt >= self._PARSE_RETRY_ATTEMPTS:
-                    raise Exception(
-                        'Translator returned a malformed numbered response '
-                        f'(expected {query_size} items) after {parse_attempt} attempts'
+                    for idx, translation in zip(prompt_query_indices, parsed):
+                        translations[idx] = translation
+                    self.logger.info(
+                        f'Batch translated{split_prefix}: '
+                        f'{len([t for t in translations if t])}/{len(queries)} completed.'
                     )
+                    return True
+
+                remaining = self._PARSE_RETRY_ATTEMPTS - attempt - 1
                 self.logger.warning(
                     f'Malformed numbered response (expected {query_size} items), '
-                    f'retrying... (attempt {parse_attempt}/{self._PARSE_RETRY_ATTEMPTS})'
+                    f'remaining {remaining} time(s) before splitting the batch.'
                 )
+
+            if len(prompt_queries) > 1 and split_level < self._MAX_SPLIT_ATTEMPTS:
+                if split_level == 0:
+                    self.logger.warning(
+                        'Retry limit reached. Splitting the translation batch.'
+                    )
+                else:
+                    self.logger.warning(
+                        'Further splitting the translation batch due to persistent errors.'
+                    )
+                mid = len(prompt_queries) // 2
+                futures = []
+                for sub_queries, sub_indices in (
+                    (prompt_queries[:mid], prompt_query_indices[:mid]),
+                    (prompt_queries[mid:], prompt_query_indices[mid:]),
+                ):
+                    if sub_queries:
+                        futures.append(
+                            translate_batch(sub_queries, sub_indices, split_level + 1)
+                        )
+                results = await asyncio.gather(*futures)
+                return all(results)
+
+            self.logger.error(
+                'Unable to parse numbered translations after retries/splits for queries: '
+                + ' | '.join(prompt_queries)
+            )
+            return False
+
+        ok = await translate_batch(queries, list(range(len(queries))))
+        if not ok or any(not (t or '').strip() for t in translations):
+            raise Exception(
+                'Translator returned a malformed numbered response '
+                f'(expected {len(queries)} items) after retries and splits'
+            )
 
         for t in translations:
             if "I'm sorry, but I can't assist with that request" in t:
@@ -214,7 +303,12 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
 
         return translations
 
-    async def _request_translation(self, to_lang: str, prompt: str) -> str:
+    async def _request_translation(
+        self,
+        to_lang: str,
+        prompt: str,
+        temperature: float | None = None,
+    ) -> str:
         messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
 
         few_shot_lang = getattr(self, '_few_shot_to_lang', to_lang)
@@ -229,7 +323,7 @@ class CustomOpenAiTranslator(ConfigGPT, CommonTranslator):
             model=self.model or CUSTOM_OPENAI_MODEL,
             messages=messages,
             max_tokens=self._MAX_TOKENS // 2,
-            temperature=self.temperature,
+            temperature=self.temperature if temperature is None else temperature,
             top_p=self.top_p,
         )
 
